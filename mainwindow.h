@@ -2,7 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include "fisheye_distortion_correction.h"
+#include "FisheyeDistortionCorrection.h"
 namespace Ui {
 class MainWindow;
 }
@@ -16,8 +16,9 @@ public:
     ~MainWindow();
 
 private:
-    Ui::MainWindow *ui;
-    fisheye_distortion_correction *m_correction;
+    Ui::MainWindow              *ui;
+    FisheyeDistortionCorrection *mCorrection;
+    QImage                      mOriginalImage;
 public Q_SLOTS:
     void openFileOnClicked();
     void processOnClicked();

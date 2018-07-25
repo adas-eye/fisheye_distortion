@@ -26,11 +26,11 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
         main.cpp \
         mainwindow.cpp \
-    fisheye_distortion_correction.cpp
+    FisheyeDistortionCorrection.cpp
 
 HEADERS += \
         mainwindow.h \
-    fisheye_distortion_correction.h
+    FisheyeDistortionCorrection.h
 
 FORMS += \
         mainwindow.ui

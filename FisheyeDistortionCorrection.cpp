@@ -1,4 +1,4 @@
-#include "fisheye_distortion_correction.h"
+#include "FisheyeDistortionCorrection.h"
 
 #include <QImage>
 #include <QDebug>
@@ -7,105 +7,144 @@
 //#define PARABOLIC
 #define CIRCEL
 //#define ELLIPSE
-fisheye_distortion_correction::fisheye_distortion_correction()
+FisheyeDistortionCorrection::FisheyeDistortionCorrection()
 {
-    initialize();
+    Initialize();
 }
 
-fisheye_distortion_correction *fisheye_distortion_correction::getInstance() {
-   static fisheye_distortion_correction correction;
+FisheyeDistortionCorrection *FisheyeDistortionCorrection::getInstance() {
+   static FisheyeDistortionCorrection correction;
    return &correction;
 }
 
-void fisheye_distortion_correction::initialize() {
-    setPictureSize(0,0);
-    setFileFormat(0);
-    setCorrectionCofficient(0, 100);
-    setFileLocation(NULL);
+void FisheyeDistortionCorrection::Initialize() {
+    SetPictureSize(0,0);
+    SetOpticalCenterPoint(0, 0);
+    SetRotation(0);
+    SetCrop(0, 0, 0, 0);
+    Set2rdCurveCoff(0,0);
+    SetFileLocation(QString(""));
 }
 
-void fisheye_distortion_correction::setFileFormat(int format) {
-    this->format = format;
+void FisheyeDistortionCorrection::SetPictureSize(int width, int height) {
+    mWidth = width;
+    mHeight = height;
+    qDebug("PictureSize: %dx%d", width, height);
 }
 
-void fisheye_distortion_correction::setPictureSize(int width, int height) {
-    this->width = width;
-    this->height = height;
+void FisheyeDistortionCorrection::SetFileLocation(QString filepath) {
+    mFilePath = filepath;
+    qDebug() << "FilePath: " << filepath << endl;
 }
 
-void fisheye_distortion_correction::setFileLocation(QString filepath) {
-    this->file_path = filepath;
-}
 
-void fisheye_distortion_correction::setCorrectionCofficient(int coff_value, int coff_range) {
-    this->coff_value = coff_value;
-    this->coff_range = coff_range;
-}
-
-QImage fisheye_distortion_correction::imageRotate(QImage *image, int angleValue)
+QImage FisheyeDistortionCorrection::DoImageRotate(QImage *image, int angleValue)
 {
     QMatrix matrix;
     matrix.rotate(angleValue);
-    return image->transformed(matrix, Qt::FastTransformation);
+    QImage transfrom = image->transformed(matrix, Qt::FastTransformation);
+    return transfrom.scaled(image->size());
 }
 
-void fisheye_distortion_correction::process1(QImage *oriImage, QImage *rotateImage, QImage *hImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage)
+void FisheyeDistortionCorrection::SetOpticalCenterPoint(int x, int y)
 {
-    QImage image(file_path);
+    mOpticalCenterX = x;
+    mOpticalCenterY = y;
+    qDebug("OpticalCenterPoint = %dx%d", mOpticalCenterX, mOpticalCenterY);
+}
+
+void FisheyeDistortionCorrection::Set2rdCurveCoff(int hBase, int vBase)
+{
+    mHorizontalBase = hBase;
+    mVerticalBase   = vBase;
+    qDebug("Set 2rd Curve Coff: %d, %d", mHorizontalBase, mVerticalBase);
+}
+
+void FisheyeDistortionCorrection::SetRotation(int rotation)
+{
+    mRotation = rotation;
+    qDebug("Rotation= %d", rotation);
+}
+
+void FisheyeDistortionCorrection::SetCrop(int x, int y, int w, int h)
+{
+    mCropX = x;
+    mCropY = y;
+    mCropW = w;
+    mCropH = h;
+    qDebug("SetCrop: %d, %d, %d, %d", mCropX, mCropY, mCropW, mCropH);
+}
+
+QImage FisheyeDistortionCorrection::GetDefaultImage()
+{
+    QImage image(mFilePath);
     if (image.isNull())
     {
         qDebug() << "bad image input";
+        return image;
+    }
+    return image.convertToFormat(QImage::Format_RGB888);
+}
+
+void FisheyeDistortionCorrection::Process1(QImage *oriImage, QImage *rotateImage, QImage *hImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage)
+{
+    const int width     = oriImage->width();
+    const int height    = oriImage->height();
+
+    if (width != mWidth || height != mHeight)
+    {
+        qDebug("mismatch: set size: %dx%d, image size: %dx%d", mWidth, mHeight, width, height);
         return;
     }
-
-    *oriImage = image.convertToFormat(QImage::Format_RGB888);
-    const int width = oriImage->width();
-    const int height = oriImage->height();
     qDebug("original image size = %dx%d", width, height);
 
-    *rotateImage = imageRotate(oriImage, 7);
+    *rotateImage = DoImageRotate(oriImage, mRotation);
+    qDebug("rotate Image size: %d, %d", rotateImage->width(), rotateImage->height());
+
+    const int opticalCenterW        = (mOpticalCenterX == 0) ? ((width -1) / 2) : mOpticalCenterX;
+    const int opticalCenterH        = (mOpticalCenterY == 0) ? ((height -1) / 2) : mOpticalCenterY;
+    const int maxVerticalArcLength   = AlignTo(opticalCenterH * M_PI, 2);
+    const int maxHorizontalArcLengh = AlignTo(opticalCenterW * M_PI, 2);
+    qDebug("optical center point: %dx%d", opticalCenterW, opticalCenterH);
+    qDebug("maxVerticalArcLength = %d, maxHorizontalArcLength = %d",
+           maxVerticalArcLength, maxHorizontalArcLengh);
 
     /**
      * do horizontal correction, two-order curve.
-     * suspect the opitial pointer: (w/2, h/2).
+     * suspect the opitial pointer: (opticalCenterW, opticalCenterW).
      * the coordinate system: x aix <---> width; y aix <---> height.
      * the equation: y = a*x^x + b*x + c.
      * three point should be:
-     *  (0, coff_h), (w/2, y'), (w, coff_h).
+     *  (0, coffH), (opticalCenterW, y'), (opticalCenterW * 2, coffH).
      * here, the y' should be changed according to the peak of the curve.
      */
-    qDebug("original image size = %dx%d", width, height);
 
-    //int mapX[width][height] = { 0 };
-    int maxHorizontalArcLengh   = alignTo(width * M_PI_2, 2);
     QPoint *mappedX             = new QPoint[maxHorizontalArcLengh * height];
+    float *arcLengthDeltaX      = new float[opticalCenterW];
+    const int verticalBase       = (mVerticalBase == 0) ? height / 4: mVerticalBase;
 
-    const int arcSizeX          = width / 2;
-    float *arcLengthDeltaX      = new float[arcSizeX];
-
-    const int coff_h_base =     height / 2;
-
-    for (int h = 0; h < height / 2; ++h)
+    for (int h = 0; h < opticalCenterH; ++h)
     {
         /**
          * the euqtion should locate on these three points.
-         * (0, coff_h), (width/2, h), (width, coff_h)
-         * 1: coff_h = a * 0 * 0 + b * 0 + c
-         * 2: h = a * (width / 2) * (width / 2) + b * (width / 2) + c
-         * 3: coff_h = a * width * width + b * width + c.
+         * (0, coffH), (opticalCenterW, h), (opticalCenterW * 2, coffH)
+         * 1: coffH = a * 0 * 0 + b * 0 + c
+         * 2: h = a * (opticalCenterW) * (opticalCenterW) + b * (opticalCenterW) + c
+         * 3: coffH = a * opticalCenterW * opticalCenterW * 4 + b * opticalCenterW * 2 + c.
          * then, we can calculate the coff: a , b , c.
-         * here, the coff_h is tuneable value according the the h
+         * here, the coffH is tuneable value according the the h
          **/
 
-        // h / (height / 2) = (coff_h - coff_h_base) / (height/2 - coff_h_base).
-        float coff_h    = h * (height / 2 - coff_h_base) / (height / 2) + coff_h_base;
+        // h / (height / 2) = (coffH - hBase) / (height/2 - hBase).
+        float coffH    = h * (opticalCenterH - verticalBase) / (opticalCenterH) + verticalBase;
 
-        float a         = 4 * (coff_h - h) / (float)width / (float) width;
-        float b         = -a * width;
-        float c         = coff_h;
+        float a         = (coffH - h) / (float)opticalCenterW / (float) opticalCenterW;
+        float b         = -a * opticalCenterW * 2;
+        float c         = coffH;
         //qDebug("a = %f, b = %f, c = %f", a, b, c);
-        for (int arc = 0; arc < arcSizeX; arc++)
+        for (int arc = 0; arc < opticalCenterW; arc++)
         {
+
             arcLengthDeltaX[arc] = GetArchLens(a, b, c, arc, arc + 1);
             //qDebug("arcLengthDeltaX = %f", arcLengthDeltaX[arc]);
         }
@@ -119,24 +158,26 @@ void fisheye_distortion_correction::process1(QImage *oriImage, QImage *rotateIma
             int x0Flip              = w;
             int y0Flip              = height - 1 - y0;
             float arcLengthTotalX   = 0.0f;
-            for (int arc = (w < arcSizeX) ? w : arcSizeX * 2 - w; arc < arcSizeX; ++arc)
+            for (int arc = (w < opticalCenterW) ? w : opticalCenterW * 2 - w; arc < opticalCenterW; ++arc)
             {
+                if (arc < 0) continue;
                 arcLengthTotalX += arcLengthDeltaX[arc];
             }
 
             if (h == 0 && w == 0)
             {
                 int arcLength = GetArchLens(a, b, c, x0, y0, width / 2, h);
+                qDebug("a = %f, b = %f, c = %f", a, b, c);
                 qDebug("the max arcLengthTotalX= %f, arcLength = %d", arcLengthTotalX, arcLength);
             }
-            if ( x0 < width /2 ) {
+            if ( x0 < opticalCenterW ) {
                 curr = maxHorizontalArcLengh / 2 - (int)arcLengthTotalX;
             }
             else
             {
                 curr = maxHorizontalArcLengh / 2 + (int)arcLengthTotalX;
             }
-
+            Range(curr, 0, maxHorizontalArcLengh - 1);
             int baseX       = h * maxHorizontalArcLengh;
             int baseXFlip   = (height -1 - h) * maxHorizontalArcLengh;
             for (int k = start; k < curr; ++k)
@@ -166,37 +207,32 @@ void fisheye_distortion_correction::process1(QImage *oriImage, QImage *rotateIma
      * the coordinate system: x aix <---> height, y aix <---> width.
      * the equation: y = a*x^x + b*x + c.
      * three point should be:
-     *  (0, coff_w), (height / 2, y'), (height, coff_w).
+     *  (0, coffW), (height / 2, y'), (height, coffW).
      * here, the y' should be changed according to the peak of the curve.
-     *       the coff_w is the dynamic change according the picture view.
+     *       the coffW is the dynamic change according the picture view.
      */
 
 #if 1
-    int coff_v_base             = 100;
-    //int mayY[width][height] = { 0 };
-    int maxVerticalArcLengh     = alignTo(height * M_PI_2, 2);
-    QPoint *mappedY             = new QPoint[maxHorizontalArcLengh * maxVerticalArcLengh];
-    const int arcSizeY          = height / 2;
-    float *arcLengthDeltaY      = new float[arcSizeY];
-    qDebug("maxHorizontalArcLength = %d, maxVerticalArcLength = %d", maxHorizontalArcLengh, maxVerticalArcLengh);
 
-
+    QPoint *mappedY             = new QPoint[maxHorizontalArcLengh * maxVerticalArcLength];
+    float *arcLengthDeltaY      = new float[opticalCenterH];
+    int horizontalBase          = (mHorizontalBase == 0) ? maxHorizontalArcLengh / 8 : mHorizontalBase;
     for (int w = 0; w < maxHorizontalArcLengh / 2; ++w)
     {
         /**
          * the equation should locate these three points.
-         * (0, w1), (height /2, w), (height,  w1)
-         * 1: w1 = a * 0 * 0 + b * 0 + c
+         * (0, coffW), (opticalCenterH, w), (2 * opticalCenterH,  coffW)
+         * 1: coffW = a * 0 * 0 + b * 0 + c
          * 2: w = a * height / 2 * height / 2 + b * height / 2 + c
-         * 3: w1 = a * height * height + b * height + c
+         * 3: coffW = a * height * height + b * height + c
          **/
-        //  w1 / (width / 2 - baseW) = w / (width / 2)
-        int coff_w      = w * (maxHorizontalArcLengh / 2 - coff_v_base) / (maxHorizontalArcLengh / 2) + coff_v_base;
-        float a         = 4 * (coff_w - w) / (float)maxHorizontalArcLengh / (float) maxHorizontalArcLengh;
-        float b         = a * maxHorizontalArcLengh;
-        float c         = coff_w;
+        //  coffW / (width / 2 - baseW) = w / (width / 2)
+        int coffW       = w * (maxHorizontalArcLengh / 2 - horizontalBase) / (maxHorizontalArcLengh / 2) + horizontalBase;
+        float a         =  ( coffW - w) / (float) opticalCenterH / (float) opticalCenterH;
+        float b         =  -2 * a * opticalCenterH;
+        float c         = coffW;
         //qDebug("a = %f, b = %f, c = %f", a, b, c);
-        for (int arc = 0; arc < arcSizeY; arc++)
+        for (int arc = 0; arc < opticalCenterH; arc++)
         {
             arcLengthDeltaY[arc] = GetArchLens(a, b, c, arc, arc + 1);
         }
@@ -210,24 +246,28 @@ void fisheye_distortion_correction::process1(QImage *oriImage, QImage *rotateIma
             int x0Flip              = h;
             int y0Flip              = maxHorizontalArcLengh - 1 - y0;
             float arcLengthTotalY    = 0.0f;
-            for (int arc = (x0 < arcSizeY) ? x0 : (2 * arcSizeY - x0); arc < arcSizeY; ++arc)
+            for (int arc = (x0 < opticalCenterH) ? x0 : (2 * opticalCenterH - x0); arc < opticalCenterH; ++arc)
             {
+                if (arc < 0) continue;
                 arcLengthTotalY += arcLengthDeltaY[arc];
             }
             if ( h == 0 && w == 0)
             {
                 int arcLength = GetArchLens(a, b, c, x0, y0, height / 2, w);
-                qDebug("the max arcLength  = %d, arcLengthTotalY = %f", arcLength, arcLengthTotalY);
+                qDebug("a = %f, b = %f, c = %f", a, b, c);
+                qDebug("the max arcLengthTotalY= %f, arcLength = %d", arcLengthTotalY, arcLength);
             }
 
-            if ( x0 < height / 2)
+            if ( x0 < opticalCenterH)
             {
-                curr = maxVerticalArcLengh / 2 - (int)arcLengthTotalY;
+                curr = maxVerticalArcLength / 2 - (int)arcLengthTotalY;
             }
             else
             {
-                curr = maxVerticalArcLengh / 2 + (int)arcLengthTotalY;
+                curr = maxVerticalArcLength / 2 + (int)arcLengthTotalY;
             }
+
+            curr = Range(curr, 0, maxVerticalArcLength -1);
 #if 1
             for ( int k = start; k < curr; ++k)
             {
@@ -242,8 +282,8 @@ void fisheye_distortion_correction::process1(QImage *oriImage, QImage *rotateIma
             start = curr;
         }
     }
-    QImage verticalCorrection(maxHorizontalArcLengh, maxVerticalArcLengh, QImage::Format_RGB888);
-    for (int y = 0; y < maxVerticalArcLengh; y++)
+    QImage verticalCorrection(maxHorizontalArcLengh, maxVerticalArcLength, QImage::Format_RGB888);
+    for (int y = 0; y < maxVerticalArcLength; y++)
     {
         for (int x = 0; x < maxHorizontalArcLengh; x++)
         {
@@ -252,17 +292,17 @@ void fisheye_distortion_correction::process1(QImage *oriImage, QImage *rotateIma
     }
     *vImage = verticalCorrection;
 #endif
-    int cropX0  = (maxHorizontalArcLengh - width) / 3;
-    int cropY0  = (maxVerticalArcLengh - height) / 2;
-    int cropW   = maxHorizontalArcLengh - cropX0;
-    int cropH   = maxVerticalArcLengh - cropY0 - 150;
+    int cropX0  = mCropX;
+    int cropY0  = mCropY;
+    int cropW   = mCropW;
+    int cropH   = mCropH;
     qDebug("cropX =%d, cropY = %d, cropW = %d, cropH = %d", cropX0, cropY0, cropW, cropH);
     *smoothImage = verticalCorrection.copy(cropX0,cropY0, cropW, cropH);
     *strecthImage = smoothImage->scaled(width, height, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     qDebug("strecth image wxh = %dx%d", strecthImage->width(), strecthImage->height());
 }
 
-float fisheye_distortion_correction::GetArchLens(float a, float b, float c, int x0, int x1)
+float FisheyeDistortionCorrection::GetArchLens(float a, float b, float c, int x0, int x1)
 {
     float arcLength = 0.0f;
     const float deltax = 0.1f;
@@ -277,7 +317,7 @@ float fisheye_distortion_correction::GetArchLens(float a, float b, float c, int 
     return arcLength;
 }
 
-int fisheye_distortion_correction::GetArchLens(float a, float b, float c, int x0, int y0, int x1, int y1)
+int FisheyeDistortionCorrection::GetArchLens(float a, float b, float c, int x0, int y0, int x1, int y1)
 {
     float arcLength = 0.0f;
     if ( x0 == x1) return arcLength;
@@ -298,13 +338,13 @@ int fisheye_distortion_correction::GetArchLens(float a, float b, float c, int x0
 
     return arcLength;
 }
-void fisheye_distortion_correction::process(QImage *ori_image,
+void FisheyeDistortionCorrection::Process(QImage *ori_image,
                                             QImage *h_image,
                                             QImage *v_image,
                                             QImage *smooth_image,
                                             QImage *strecth_image)
 {
-    QImage image(file_path);
+    QImage image(mFilePath);
     if (image.isNull()) {
         qDebug() << "bad image input";
         return ;
@@ -359,34 +399,34 @@ void fisheye_distortion_correction::process(QImage *ori_image,
     // the optical point is: (a, b), here the a is fixed value:
     //          a = w/2.0f;
     // and then suspect the circel will go through these three point:
-    //          (0, coff_h), (w, coff_h), (a, y); ( y should be 0~b).
+    //          (0, coffH), (w, coffH), (a, y); ( y should be 0~b).
     // and resove the equation, we can get the b and r.
 
     a = (w-1) / 2.0f;
 
     // then:
-    // a^a + (coff_h-b)^(coff_h-b) = r *r
+    // a^a + (coffH-b)^(coffH-b) = r *r
     // (y-b) ^ (y -b) = r*r
 
     // here, the coff range is tuneable according to the eyefish picture.
-    float coff_h_base = 200;
+    float hBase = 200;
     x_end = w;
     y_end = (h-1) / 2.0;
 
-    // suspec the coff_h match the function: coff = a_h* x^(gamma) + b_h
-    // will go through this to point(0, coff_h_base/h_end), ( 1, 1)
-    float b_h = coff_h_base/(float)y_end;
+    // suspec the coffH match the function: coff = a_h* x^(gamma) + b_h
+    // will go through this to point(0, hBase/h_end), ( 1, 1)
+    float b_h = hBase/(float)y_end;
     float gamma_h = 1/1.12;
     QColor pre;
     QColor pre1;
     for (int y = 0; y < y_end; y++) {
 #if 0
-        float coff_h = y+ coff_h_base - y * coff_h_base / y_end;
+        float coffH = y+ hBase - y * hBase / y_end;
 #else
         float a_h = 1 - b_h;
-        float coff_h = (a_h * pow(y/(float)y_end, gamma_h) + b_h) * y_end;
+        float coffH = (a_h * pow(y/(float)y_end, gamma_h) + b_h) * y_end;
 #endif
-        b = (y * y - coff_h * coff_h - a * a) / (float)(2.0 * ( y - coff_h));
+        b = (y * y - coffH * coffH - a * a) / (float)(2.0 * ( y - coffH));
         r = sqrt((y-b) * (y-b));
         qDebug() << "a = " << a << ", b = " << b << ",r = " << r;
         for (int x = 0; x < x_end; x++) {
@@ -430,19 +470,19 @@ void fisheye_distortion_correction::process(QImage *ori_image,
     // and resove the equation, we can get the b and r.
     b = (h-1) / 2.0f;
 
-    float coff_v_base = -200;
+    float vBase = -200;
     x_end = (w-1) / 2.0f;
     y_end = h;
 
     // suspec the coff_v match the function: coff = a_v* x^(gamma) + b_v
     // will go through this to point(0, coff_v/x_end), ( 1, 1)
     float gamma_v = 1/2.4f;
-    float b_v = coff_v_base/(float)x_end;
+    float b_v = vBase/(float)x_end;
     float a_v = 1 - b_v;
     for (int x = 0; x < x_end; x++) {
 #if 0
-        float coff_v = coff_v_base - coff_v_base * x / x_end + x;
-        //float coff_v = x + coff_v_base;
+        float coff_v = vBase - vBase * x / x_end + x;
+        //float coff_v = x + vBase;
 #else
         float coff_v = (a_v * pow (x/(float)x_end, gamma_v) + b_v) * x_end;
 
@@ -622,8 +662,8 @@ void fisheye_distortion_correction::process(QImage *ori_image,
     //according to the optical center point. we need do strection.
     const float strection_w_ratio               = M_PI_2;
     const float strection_h_ratio               = M_PI_2 * 0.8;
-    const int strection_width                   = alignTo(w * strection_w_ratio * 2, 2);
-    const int strection_height                  = alignTo(h * strection_h_ratio * 2, 2);
+    const int strection_width                   = AlignTo(w * strection_w_ratio * 2, 2);
+    const int strection_height                  = AlignTo(h * strection_h_ratio * 2, 2);
     const int ocw                               = w / 2;
     const int och                               = h / 2;
     const int ocsw                              = strection_width / 2;
@@ -633,10 +673,10 @@ void fisheye_distortion_correction::process(QImage *ori_image,
     QImage strection(strection_width, strection_height, QImage::Format_RGB888);
     for (int y = ocsh; y > 0; --y)
     {
-        int y1 = ldcMin(h-1, qPow(y / (float)ocsh, 4.0) * och);
+        int y1 = MyMin(h-1, qPow(y / (float)ocsh, 4.0) * och);
         for (int x = ocsw; x > 0; --x)
         {
-            int x1 = ldcMin(w-1, qPow(x / (float)ocsw, 4.0) * ocw);
+            int x1 = MyMin(w-1, qPow(x / (float)ocsw, 4.0) * ocw);
 
             strection.setPixel(x, y, smooth_image->pixel(x1, y1));
 
@@ -650,7 +690,7 @@ void fisheye_distortion_correction::process(QImage *ori_image,
     *strecth_image = strection.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
 
-int fisheye_distortion_correction::alignTo(int value, int k)
+int FisheyeDistortionCorrection::AlignTo(int value, int k)
 {
     int delat  = value % k;
     if (delat == 0) return value;
