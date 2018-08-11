@@ -17,6 +17,10 @@ public:
             QImage *v_image, QImage *smooth_image, QImage *strecth_image);
     void    Process1(QImage *oriImage, QImage *hImage,
             QImage *rotateImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage);
+    void    Process2(QImage *oriImage, QImage *hImage,
+            QImage *rotateImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage);
+    void    Process3(QImage *oriImage, QImage *hImage,
+            QImage *rotateImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage);
 
     QImage  GetDefaultImage();
     QImage  DoImageRotate(QImage *image, int angleValue);
@@ -29,6 +33,10 @@ public:
     int     GetArchLens(float a, float b, float c, int x0, int y0, int x1, int y1);
 
     float   GetArchLens(float a, float  b, float c, int x0, int x1);
+
+    float   GetArchLensOfCircel(float a, float b, float r, int x);
+
+    double  GetAngelOfTwoLines(double k1, double k2);
 
     int     AlignTo(int value, int k);
 

@@ -75,7 +75,7 @@ void MainWindow::processOnClicked() {
         QImage smooth_image;
         QImage strecth_image;
         QImage rotate_image;
-        mCorrection->Process1(&mOriginalImage, &rotate_image, &h_image, &v_image,&smooth_image, &strecth_image);
+        mCorrection->Process3(&mOriginalImage, &rotate_image, &h_image, &v_image,&smooth_image, &strecth_image);
         ui->label_h_image->setPixmap(QPixmap::fromImage(h_image));
         ui->label_v_image->setPixmap(QPixmap::fromImage(v_image));
         ui->label_smooth_image->setPixmap(QPixmap::fromImage(smooth_image));

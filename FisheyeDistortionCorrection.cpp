@@ -86,6 +86,458 @@ QImage FisheyeDistortionCorrection::GetDefaultImage()
     return image.convertToFormat(QImage::Format_RGB888);
 }
 
+float FisheyeDistortionCorrection::GetArchLensOfCircel(float a, float b, float r, int x)
+{
+    // original pos( a, b), ref pos (a, 0).
+    return (float)(asin(qAbs(a-x) / r))  * r;
+}
+
+double FisheyeDistortionCorrection::GetAngelOfTwoLines(double k1, double k2)
+{
+    if (k1 * k2 == -1) return M_PI_4;
+    double tanangel = qAbs((k1 - k2) / ( 1 + k1 * k2));
+    double angle = atan(tanangel);
+    if (k1 * k2 < 0 && k1 * k2 > -1)
+        angle = M_PI - angle;
+    return angle;
+}
+
+// here, we suspect the standard equation of the circle satisfied the our requirement.
+// (x -a) * (x -a) + (y -b) * (y -b) = r * r;
+void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage, QImage *hImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage)
+{
+    const int width     = oriImage->width();
+    const int height    = oriImage->height();
+
+    if (width != mWidth || height != mHeight)
+    {
+        qDebug("mismatch: set size: %dx%d, image size: %dx%d", mWidth, mHeight, width, height);
+        return;
+    }
+    qDebug("original image size = %dx%d", width, height);
+
+
+    /**
+     * we need do the rotate before the lend distortion correction.
+     * our calculate ldc based on the iamge coordinate system.
+     * we separate the correction with the horizontal base on image x aix.
+     * and the vertical base on image y aix.
+     * so, we sould make sure the image distortion without angle shift.
+     **/
+
+    *rotateImage = DoImageRotate(oriImage, mRotation);
+    qDebug("rotate Image size: %d, %d", rotateImage->width(), rotateImage->height());
+
+    const int opticalCenterW        = (mOpticalCenterX == 0) ? ((width -1) / 2) : mOpticalCenterX;
+    const int opticalCenterH        = (mOpticalCenterY == 0) ? ((height -1) / 2) : mOpticalCenterY;
+    const int maxVerticalArcLength   = AlignTo(opticalCenterH * M_PI, 2);
+    const int maxHorizontalArcLengh = AlignTo(opticalCenterW * M_PI, 2);
+    qDebug("optical center point: %dx%d", opticalCenterW, opticalCenterH);
+    qDebug("maxVerticalArcLength = %d, maxHorizontalArcLength = %d",
+           maxVerticalArcLength, maxHorizontalArcLengh);
+
+    /**
+     * do horizontal correction.
+     * suspect the opitial pointer: (opticalCenterW, opticalCenterW).
+     * the coordinate system: x aix <---> width; y aix <---> height.
+     */
+
+    QPoint *mappedX             = new QPoint[maxHorizontalArcLengh * height];
+    float *arcLength            = new float[opticalCenterW];
+    const int verticalBase      = (mVerticalBase == 0) ? height / 4: mVerticalBase;
+
+    for (int h = 0; h < opticalCenterH; ++h)
+    {
+        /**
+         * the euqtion should locate on these three points.
+         * then, we can calculate the coff: a , b , r
+         * here, the coffH is tuneable value according the the h
+         **/
+
+        // h / (height / 2) = (coffH - hBase) / (height/2 - hBase).
+        float coffH    = h * (opticalCenterH - verticalBase) / (opticalCenterH) + verticalBase;
+
+        if (h == coffH) break;
+        float a = opticalCenterW;
+        float b = (h + coffH - a * a / (float)(h- coffH)) / 2;
+        float r = pow((h - b) * (h - b), 0.5f);
+
+        //qDebug("a = %f, b = %f, c = %f", a, b, c);
+        for (int arc = 0; arc < opticalCenterW; arc++)
+        {
+            arcLength[arc] = GetArchLensOfCircel(a, b, r, arc);
+            //qDebug("arcLengthDeltaX = %f", arcLengthDeltaX[arc]);
+        }
+
+        int start = 0;
+        int curr  = 0;
+        for (int w = 0; w < width; ++w)
+        {
+            int x0                  = w;
+            int y0                  = Range(b - pow (pow(r, 2) - pow( x0 - a, 2), 0.5f), 0, height-1);
+            int x0Flip              = w;
+            int y0Flip              = Range(height - 1 - y0, 0, height-1);
+
+            int arc = (w < opticalCenterW) ? w : ( 2 * opticalCenterW - w);
+
+            float arcLenghx          = arcLength[arc];
+
+            if (h == 0 && w == 0)
+            {
+                qDebug("arctan = %lf", asin(a/r));
+                qDebug("a = %f, b = %f, r = %f", a, b, r);
+                qDebug("the maxHorizontalArcLengh = %d, arcLength = %f", maxHorizontalArcLengh, arcLenghx);
+            }
+
+            if ( x0 < opticalCenterW ) {
+                curr = maxHorizontalArcLengh / 2 - (int)arcLenghx;
+            }
+            else
+            {
+                curr = maxHorizontalArcLengh / 2 + (int)arcLenghx;
+            }
+
+            curr = Range(curr, 0, maxHorizontalArcLengh - 1);
+
+            int baseX       = h * maxHorizontalArcLengh;
+            int baseXFlip   = (height -1 - h) * maxHorizontalArcLengh;
+
+            //qDebug() << "baseX = "<< baseX << endl;
+            //qDebug() << "start = "<< start <<", curr = "<< curr << endl;
+
+            for (int k = start; k < curr; ++k)
+            {
+                mappedX[baseX + k].setX(x0);
+                mappedX[baseX + k].setY(y0);
+
+                mappedX[baseXFlip + k].setX(x0Flip);
+                mappedX[baseXFlip + k].setY(y0Flip);
+            }
+
+            start = curr;
+        }
+    }
+
+    QImage horizonCorrection(maxHorizontalArcLengh, height, QImage::Format_RGB888);
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < maxHorizontalArcLengh; x++)
+        {
+            horizonCorrection.setPixel(x, y, rotateImage->pixel(mappedX[y* maxHorizontalArcLengh + x]));
+        }
+    }
+    *hImage = horizonCorrection;
+
+    qDebug("Horizontal Correction Done");
+
+
+    //============================== do veritical strength ==============================
+
+    /**
+     * the verital correcion.
+     * every column will satisfy the same standard circel equation.
+     * (x -a ) * (x - a) + (y - b)* (y - b) = r * r;
+     *
+     * (0, 0), (opticalCenterH, coffW), ( 2* opticalCenterH, 0).
+     **/
+    int coff = -350;
+    double a = opticalCenterH;
+    double b = (coff - a * a / (double) coff) / 2.0f;
+    double r = pow(a * a + b * b, 0.5f);
+    qDebug() << "standard circel equation for vertical correction: a = "<< a << ",b = " << b << ", r = " << r << endl;
+    // get the max arc length from (0, 0) to (2 * poticalCenterH, 0).
+
+    // y = a1* x + b1 , line through the (0, 0) and (a, b).
+    //float a1 = b / a;
+    //float b1 = 0;
+    double k1 = b / a; // k1 = a1;
+
+    // y = a2 * x + b2, line thougth the (2*poticalCenterH, 0) and (a, b)
+    //float a2 = b / ( a - 2 * opticalCenterH);
+    //float b2 = -a2 * 2 * opticalCenterH;
+    double k2 = b / ( a - 2 * opticalCenterH); // k2 = a2;
+
+    // arch = angle / 2PI * 2PI * R;
+    int   arcH = (int)(qAbs(GetAngelOfTwoLines(k1, k2) * r));
+    qDebug() << "k1 = " << k1 << ",k2 = " << k2 << endl;
+    qDebug() << "arcH = " << arcH;
+    QImage verticalCorrection(maxHorizontalArcLengh, arcH, QImage::Format_RGB888);
+    int *mappedH = new int[arcH];
+    int curr = 0;
+
+    for (int h = 0; h < height; h++)
+    {
+        int x3 = h;
+        int y3 = b - pow( r * r - ( x3 - a) * (x3 - a), 0.5f);
+        // y = a3 * x + b2, line thougth the (x3, y3). (a, b)
+        int arcLength = 0;
+        if (a == x3)
+        {
+            arcLength = (int)((M_PI_2  - qAbs(atan(k1))) * r);
+            qDebug() << "a == x3 = " << x3 << ",arcLength = " << arcLength << endl;
+        }
+        else
+        {
+            double k3  = ( b- y3) / (float)(x3 - a);
+            double angle = qAbs(GetAngelOfTwoLines(k1, k3));
+            arcLength = (int)(angle * r);
+            qDebug() << "h = " << h << "k3 = " << k3 << "angle = " << angle <<",arcLength " << arcLength << endl;
+            if (arcLength > arcH)
+            {
+                qDebug() << "bad arcLength= " << arcLength << endl;
+                arcLength = arcH;
+            }
+        }
+        qDebug() << "curr " << curr <<  endl;
+        for (int index = curr; index < arcLength; ++index)
+        {
+            mappedH[index] = h;
+            qDebug() << "index = " << index << "h = " << h << endl;
+        }
+        curr = arcLength;
+    }
+    for (int index = 0; index < arcH; ++index)
+    {
+        qDebug() << "mappedH " << mappedH[index] << endl;
+    }
+#if 1
+    for (int h = 0; h < arcH ; h++)
+    {
+        for (int w = 0; w < maxHorizontalArcLengh; ++w)
+        {
+            verticalCorrection.setPixel(w, h, hImage->pixel(w, mappedH[h]));
+        }
+    }
+#endif
+    *vImage = verticalCorrection;
+    int cropX0  = mCropX;
+    int cropY0  = mCropY;
+    int cropW   = mCropW;
+    int cropH   = mCropH;
+    qDebug("cropX =%d, cropY = %d, cropW = %d, cropH = %d", cropX0, cropY0, cropW, cropH);
+    *smoothImage = verticalCorrection.copy(cropX0,cropY0, cropW, cropH);
+    *strecthImage = smoothImage->scaled(width, height, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    qDebug("strecth image wxh = %dx%d", strecthImage->width(), strecthImage->height());
+}
+
+
+// here, we suspect the standard equation of the circle satisfied the our requirement. 
+// (x -a) * (x -a) + (y -b) * (y -b) = r * r;
+void FisheyeDistortionCorrection::Process2(QImage *oriImage, QImage *rotateImage, QImage *hImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage)
+{
+    const int width     = oriImage->width();
+    const int height    = oriImage->height();
+
+    if (width != mWidth || height != mHeight)
+    {
+        qDebug("mismatch: set size: %dx%d, image size: %dx%d", mWidth, mHeight, width, height);
+        return;
+    }
+    qDebug("original image size = %dx%d", width, height);
+
+    *rotateImage = DoImageRotate(oriImage, mRotation);
+    qDebug("rotate Image size: %d, %d", rotateImage->width(), rotateImage->height());
+
+    const int opticalCenterW        = (mOpticalCenterX == 0) ? ((width -1) / 2) : mOpticalCenterX;
+    const int opticalCenterH        = (mOpticalCenterY == 0) ? ((height -1) / 2) : mOpticalCenterY;
+    const int maxVerticalArcLength   = AlignTo(opticalCenterH * M_PI, 2);
+    const int maxHorizontalArcLengh = AlignTo(opticalCenterW * M_PI, 2);
+    qDebug("optical center point: %dx%d", opticalCenterW, opticalCenterH);
+    qDebug("maxVerticalArcLength = %d, maxHorizontalArcLength = %d",
+           maxVerticalArcLength, maxHorizontalArcLengh);
+
+    /**
+     * do horizontal correction.
+     * suspect the opitial pointer: (opticalCenterW, opticalCenterW).
+     * the coordinate system: x aix <---> width; y aix <---> height.
+     */
+
+    QPoint *mappedX             = new QPoint[maxHorizontalArcLengh * height];
+    float *arcLength            = new float[opticalCenterW];
+    const int verticalBase      = (mVerticalBase == 0) ? height / 4: mVerticalBase;
+
+    for (int h = 0; h < opticalCenterH; ++h)
+    {
+        /**
+         * the euqtion should locate on these three points.
+         * then, we can calculate the coff: a , b , r
+         * here, the coffH is tuneable value according the the h
+         **/
+
+        // h / (height / 2) = (coffH - hBase) / (height/2 - hBase).
+        float coffH    = h * (opticalCenterH - verticalBase) / (opticalCenterH) + verticalBase;
+
+        if (h == coffH) break;
+        float a = opticalCenterW;
+        float b = (h + coffH - a * a / (float)(h- coffH)) / 2;
+        float r = pow((h - b) * (h - b), 0.5f);
+        
+        //qDebug("a = %f, b = %f, c = %f", a, b, c);
+        for (int arc = 0; arc < opticalCenterW; arc++)
+        {
+            arcLength[arc] = GetArchLensOfCircel(a, b, r, arc);
+            //qDebug("arcLengthDeltaX = %f", arcLengthDeltaX[arc]);
+        }
+
+        int start = 0;
+        int curr  = 0;
+        for (int w = 0; w < width; ++w)
+        {
+            int x0                  = w;
+            int y0                  = Range(b - pow (pow(r, 2) - pow( x0 - a, 2), 0.5f), 0, height-1);
+            int x0Flip              = w;
+            int y0Flip              = Range(height - 1 - y0, 0, height-1);
+
+            int arc = (w < opticalCenterW) ? w : ( 2 * opticalCenterW - w);
+
+            float arcLenghx          = arcLength[arc];
+
+            if (h == 0 && w == 0)
+            {
+                qDebug("arctan = %lf", asin(a/r));
+                qDebug("a = %f, b = %f, r = %f", a, b, r);
+                qDebug("the maxHorizontalArcLengh = %d, arcLength = %f", maxHorizontalArcLengh, arcLenghx);
+            }
+
+            if ( x0 < opticalCenterW ) {
+                curr = maxHorizontalArcLengh / 2 - (int)arcLenghx;
+            }
+            else
+            {
+                curr = maxHorizontalArcLengh / 2 + (int)arcLenghx;
+            }
+
+            curr = Range(curr, 0, maxHorizontalArcLengh - 1);
+
+            int baseX       = h * maxHorizontalArcLengh;
+            int baseXFlip   = (height -1 - h) * maxHorizontalArcLengh;
+
+            //qDebug() << "baseX = "<< baseX << endl;
+            //qDebug() << "start = "<< start <<", curr = "<< curr << endl;
+
+            for (int k = start; k < curr; ++k)
+            {
+                mappedX[baseX + k].setX(x0);
+                mappedX[baseX + k].setY(y0);
+
+                mappedX[baseXFlip + k].setX(x0Flip);
+                mappedX[baseXFlip + k].setY(y0Flip);
+            }
+
+            start = curr;
+        }
+    }
+
+    qDebug("Horizontal Correction");
+    QImage horizonCorrection(maxHorizontalArcLengh, height, QImage::Format_RGB888);
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < maxHorizontalArcLengh; x++)
+        {
+            horizonCorrection.setPixel(x, y, rotateImage->pixel(mappedX[y* maxHorizontalArcLengh + x]));
+        }
+    }
+    *hImage = horizonCorrection;
+
+    /**
+     * do horizontal correction, two-order curve.
+     * suspect the opitial pointer: (w/2, h/2).
+     * the coordinate system: x aix <---> height, y aix <---> width.
+     * the equation: y = a*x^x + b*x + c.
+     * three point should be:
+     *  (0, coffW), (height / 2, y'), (height, coffW).
+     * here, the y' should be changed according to the peak of the curve.
+     *       the coffW is the dynamic change according the picture view.
+     */
+
+#if 1
+
+    QPoint *mappedY             = new QPoint[maxHorizontalArcLengh * maxVerticalArcLength];
+    float *arcLengthDeltaY      = new float[opticalCenterH];
+    int horizontalBase          = (mHorizontalBase == 0) ? maxHorizontalArcLengh / 8 : mHorizontalBase;
+    for (int w = 0; w < maxHorizontalArcLengh / 2; ++w)
+    {
+        /**
+         * the equation should locate these three points.
+         * (0, coffW), (opticalCenterH, w), (2 * opticalCenterH,  coffW)
+         **/
+        //  coffW / (width / 2 - baseW) = w / (width / 2)
+        int coffW       = w * (maxHorizontalArcLengh / 2 - horizontalBase) / (maxHorizontalArcLengh / 2) + horizontalBase;
+
+        float a = opticalCenterH;
+        float b = (w + coffW - a * a / (float)(w -coffW)) / 2;
+        float r = pow((w - b) * (w - b), 0.5f);
+
+        //qDebug("a = %f, b = %f, c = %f", a, b, c);
+        for (int arc = 0; arc < opticalCenterH; arc++)
+        {
+            arcLength[arc] = GetArchLensOfCircel(a, b, r, arc);
+        }
+
+        int start = 0;
+        int curr  = 0;
+        for (int h = 0; h < height; ++h)
+        {
+            int x0                  = h;
+            int y0                  = Range(b - pow (pow(r, 2) - pow( x0 - a, 2), 0.5f), 0, width-1);
+            int x0Flip              = h;
+            int y0Flip              = maxHorizontalArcLengh - 1 - y0;
+
+            int arc = (x0 < opticalCenterH) ? x0 : ( 2 * opticalCenterH - x0);
+            arc     = Range(arc, 0, maxVerticalArcLength-1);
+            int arcLengthY = arcLength[arc];
+            if ( h == 0 && w == 0)
+            {
+                qDebug("a = %f, b = %f, r = %f", a, b, r);
+                qDebug("the maxVerticalArcLength= %d, arcLength = %d", maxVerticalArcLength, arcLengthY);
+            }
+
+            if ( x0 < opticalCenterH)
+            {
+                curr = maxVerticalArcLength / 2 - (int)arcLengthY;
+            }
+            else
+            {
+                curr = maxVerticalArcLength / 2 + (int)arcLengthY;
+            }
+
+            curr = Range(curr, 0, maxVerticalArcLength -1);
+#if 1
+            for ( int k = start; k < curr; ++k)
+            {
+                int offset = k * maxHorizontalArcLengh + w;
+                int offsetFlip = k * maxHorizontalArcLengh + (maxHorizontalArcLengh -1 - w);
+                mappedY[offset].setX(y0);
+                mappedY[offset].setY(x0);
+                mappedY[offsetFlip].setX(y0Flip);
+                mappedY[offsetFlip].setY(x0Flip);
+            }
+#endif
+            start = curr;
+        }
+    }
+    QImage verticalCorrection(maxHorizontalArcLengh, maxVerticalArcLength, QImage::Format_RGB888);
+    for (int y = 0; y < maxVerticalArcLength; y++)
+    {
+        for (int x = 0; x < maxHorizontalArcLengh; x++)
+        {
+            verticalCorrection.setPixel(x, y, hImage->pixel(mappedY[y * maxHorizontalArcLengh + x]));
+        }
+    }
+    *vImage = verticalCorrection;
+#endif
+    int cropX0  = mCropX;
+    int cropY0  = mCropY;
+    int cropW   = mCropW;
+    int cropH   = mCropH;
+    qDebug("cropX =%d, cropY = %d, cropW = %d, cropH = %d", cropX0, cropY0, cropW, cropH);
+    *smoothImage = verticalCorrection.copy(cropX0,cropY0, cropW, cropH);
+    *strecthImage = smoothImage->scaled(width, height, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    qDebug("strecth image wxh = %dx%d", strecthImage->width(), strecthImage->height());
+}
+
+
+// here, we suspect the second-order curve (y = a*x*x + b* x + c) satisfied the our requirement.
 void FisheyeDistortionCorrection::Process1(QImage *oriImage, QImage *rotateImage, QImage *hImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage)
 {
     const int width     = oriImage->width();
@@ -144,7 +596,6 @@ void FisheyeDistortionCorrection::Process1(QImage *oriImage, QImage *rotateImage
         //qDebug("a = %f, b = %f, c = %f", a, b, c);
         for (int arc = 0; arc < opticalCenterW; arc++)
         {
-
             arcLengthDeltaX[arc] = GetArchLens(a, b, c, arc, arc + 1);
             //qDebug("arcLengthDeltaX = %f", arcLengthDeltaX[arc]);
         }
