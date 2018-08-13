@@ -94,10 +94,11 @@ float FisheyeDistortionCorrection::GetArchLensOfCircel(float a, float b, float r
 
 double FisheyeDistortionCorrection::GetAngelOfTwoLines(double k1, double k2)
 {
-    if (k1 * k2 == -1) return M_PI_4;
+    if (k1 * k2 > -1.05 && k1 * k2 < -0.95)
+        return M_PI_4;
     double tanangel = qAbs((k1 - k2) / ( 1 + k1 * k2));
     double angle = atan(tanangel);
-    if (k1 * k2 < 0 && k1 * k2 > -1)
+    if (k1 * k2 < 0 && k1 * k2 > -1.0)
         angle = M_PI - angle;
     return angle;
 }
@@ -240,7 +241,7 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
      *
      * (0, 0), (opticalCenterH, coffW), ( 2* opticalCenterH, 0).
      **/
-    int coff = -350;
+    int coff = 350;
     double a = opticalCenterH;
     double b = (coff - a * a / (double) coff) / 2.0f;
     double r = pow(a * a + b * b, 0.5f);
@@ -268,17 +269,17 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     for (int h = 0; h < height; h++)
     {
         int x3 = h;
-        int y3 = b - pow( r * r - ( x3 - a) * (x3 - a), 0.5f);
+        int y3 = b + pow( r * r - ( x3 - a) * (x3 - a), 0.5f);
         // y = a3 * x + b2, line thougth the (x3, y3). (a, b)
         int arcLength = 0;
-        if (a == x3)
+        if ( qAbs(x3 - a) < 0.1)
         {
-            arcLength = (int)((M_PI_2  - qAbs(atan(k1))) * r);
+            arcLength = curr;
             qDebug() << "a == x3 = " << x3 << ",arcLength = " << arcLength << endl;
         }
         else
         {
-            double k3  = ( b- y3) / (float)(x3 - a);
+            double k3  = ( b- y3) / (float)(a - x3);
             double angle = qAbs(GetAngelOfTwoLines(k1, k3));
             arcLength = (int)(angle * r);
             qDebug() << "h = " << h << "k3 = " << k3 << "angle = " << angle <<",arcLength " << arcLength << endl;
@@ -289,11 +290,16 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
             }
         }
         qDebug() << "curr " << curr <<  endl;
+        if (curr  > arcLength)
+        {
+            qDebug() << "should not goto here"<< endl;
+            arcLength = curr;
+        }
         for (int index = curr; index < arcLength; ++index)
         {
             mappedH[index] = h;
-            qDebug() << "index = " << index << "h = " << h << endl;
         }
+
         curr = arcLength;
     }
     for (int index = 0; index < arcH; ++index)

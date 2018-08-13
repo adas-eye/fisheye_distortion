@@ -4,7 +4,7 @@
 #include <QDebug>
 #include <QImage>
 
-QString sDefaultFile = "C:/Debian_WorkSpace/fisheye_distortion/build/bw_rect_168.bmp";
+QString sDefaultFile = "C:/WorkSpace/github/fisheye_distortion/bw_rect_168.bmp";
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
