@@ -4,7 +4,7 @@
 #include <QDebug>
 #include <QImage>
 
-QString sDefaultFile = "C:/WorkSpace/github/fisheye_distortion/bw_rect_168.bmp";
+QString sDefaultFile = "C:/WorkSpace/fisheye_distortion/process4.jpg";
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -75,8 +75,8 @@ void MainWindow::processOnClicked() {
         QImage smooth_image;
         QImage strecth_image;
         QImage rotate_image;
-        //mCorrection->Process3(&mOriginalImage, &rotate_image, &h_image, &v_image,&smooth_image, &strecth_image);
-        mCorrection->Process4(&mOriginalImage, &h_image);
+        mCorrection->Process3(&mOriginalImage, &rotate_image, &h_image, &v_image,&smooth_image, &strecth_image);
+        //mCorrection->Process4(&mOriginalImage, &h_image);
         ui->label_h_image->setPixmap(QPixmap::fromImage(h_image));
         ui->label_v_image->setPixmap(QPixmap::fromImage(v_image));
         ui->label_smooth_image->setPixmap(QPixmap::fromImage(smooth_image));
@@ -85,7 +85,7 @@ void MainWindow::processOnClicked() {
 #endif
         ui->label_rotate_image->setPixmap(QPixmap::fromImage(rotate_image));
 
-        strecth_image.save("./test1.jpg");
+        h_image.save("./test1.jpg");
         ui->tabWidget->show();
     }
 }

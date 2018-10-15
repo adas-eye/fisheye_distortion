@@ -121,8 +121,8 @@ void FisheyeDistortionCorrection::Process4(QImage *oriImage, QImage *hImage)
 
     const int width1            = AlignTo(static_cast<int>(radius * M_PI), 2);
     const int height1           = width1;
-    const int optical_center_x1 = width1 / 2;
-    const int optical_center_y1 = height1 / 2;
+    const int optical_center_x1 = (width1-1) / 2;
+    const int optical_center_y1 = (height1-1) / 2;
     const int radius1           = optical_center_x1;
     //const int max_arc       = x1_width / 2;
     //const int width_center  = max_arc -1;
@@ -158,28 +158,35 @@ void FisheyeDistortionCorrection::Process4(QImage *oriImage, QImage *hImage)
                 }
                 else
                 {
-                    float k1        = (x1 - optical_center_x1) / (float)(y1 - optical_center_y1);
+                    double k1        = (x1 - optical_center_x1) / static_cast<double>(y1 - optical_center_y1);
                     //k1            = (x - optical_center_x) / (y - optical_center_y);
                     // cos(dist/dist_max * M_PI_2) = (dist1_max - dist1) / dist1_max
-                    //int distance    = acos((dist1_max - dist1) / dist1_max) * dist_max / M_PI_2;
-                    // distance1 = sin(dist/dist_max * M_PI_2) * radius1
-                    //int distance = asin(dist1 / radius) * dist_max / M_PI_2;
+
+                    //int distance    = static_cast<int>(acos((dist1_max - dist1) / static_cast<double>(dist1_max)) * dist_max / M_PI_2);
+
+                    // distance1 = sin(dist/dist_max * M_PI_2) * radius
+                    // int distance = static_cast<int>(asin(dist1 / static_cast<double>(radius)) * dist_max / M_PI_2);
+
+                    // dist1_max - dist1 = cos(dist /dist_max * M_PI_2)*radius
+                    int distance = static_cast<int>(acos((dist1_max - dist1) / static_cast<double>(radius1)) * dist_max / M_PI_2);
                     // distance     = GetDistance(x, y, optical_center_x, optical_center_y);
-                    int distance = dist1/dist1_max * radius1;
+                    // int distance = static_cast<int>(dist1/static_cast<float>(dist1_max) * radius);
                     // here we can calculate the x, y.
                     int x = 0;
                     int y = 0;
                     if (y1 <optical_center_y1)
                     {
-                        //x = optical_center_x - distance/(1+k);
-                        y = optical_center_y - distance/(1+k1);
+                        //x = optical_cen+-_x - distance/(1+k);
+                        y = static_cast<int>(optical_center_y - distance/qSqrt(1+k1*k1));
 
                     }
                     else
                     {
-                        y = optical_center_y + distance/(1+k1);
+                        y = static_cast<int>(optical_center_y + distance/qSqrt(1+k1*k1));
                     }
-                    x = k1 * ( y - optical_center_y) + optical_center_x;
+
+                    x = static_cast<int>(k1 * ( y - optical_center_y) + optical_center_x);
+
                     if (x < 0 || x > width || y < 0 || y > height)
                     {
                         array[h1][w1].setX(0);
