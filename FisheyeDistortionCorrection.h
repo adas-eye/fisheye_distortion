@@ -22,6 +22,8 @@ public:
     void    Process3(QImage *oriImage, QImage *hImage,
             QImage *rotateImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage);
 
+    void    Process4(QImage *oriImage, QImage *hImage);
+    
     QImage  GetDefaultImage();
     QImage  DoImageRotate(QImage *image, int angleValue);
     /*
@@ -39,6 +41,16 @@ public:
     double  GetAngelOfTwoLines(double k1, double k2);
 
     int     AlignTo(int value, int k);
+
+    template<typename T>
+    void    Create2DArray(T **&array, int height, int width);
+
+    template<typename T>
+    void    Destroy2DArray(T **&array, int height);
+
+    int     GetDistance(int x, int y, int x1, int y1);
+
+    int     GetDistance2(int x, int y, int x1, int y1);
 
     int     MyMin(int a, int b)
     {

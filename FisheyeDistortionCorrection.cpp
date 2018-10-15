@@ -43,6 +43,8 @@ QImage FisheyeDistortionCorrection::DoImageRotate(QImage *image, int angleValue)
     QMatrix matrix;
     matrix.rotate(angleValue);
     QImage transfrom = image->transformed(matrix, Qt::FastTransformation);
+    transfrom.save("rotage.jpg");
+    qDebug() << "transform size: "<< transfrom.width() << "x" << transfrom.height() << endl;
     return transfrom.scaled(image->size());
 }
 
@@ -103,6 +105,145 @@ double FisheyeDistortionCorrection::GetAngelOfTwoLines(double k1, double k2)
     return angle;
 }
 
+void FisheyeDistortionCorrection::Process4(QImage *oriImage, QImage *hImage)
+{
+    const int width     = oriImage->width();
+    const int height    = oriImage->height();
+    
+    // the optical center and radius should be calibrated alone.
+    const int optical_center_x  = (width -1) / 2;
+    const int optical_center_y  = (height -1) / 2;
+    const int radius            = optical_center_x;
+    
+    qDebug(" image size = %dx%d", width, height);
+    qDebug(" image optical center point = %dx%d", optical_center_x, optical_center_y);
+    
+
+    const int width1            = AlignTo(static_cast<int>(radius * M_PI), 2);
+    const int height1           = width1;
+    const int optical_center_x1 = width1 / 2;
+    const int optical_center_y1 = height1 / 2;
+    const int radius1           = optical_center_x1;
+    //const int max_arc       = x1_width / 2;
+    //const int width_center  = max_arc -1;
+    //const int height_center = max_arc -1;
+    qDebug(" new Image size = %dx%d",width1, height1);
+    qDebug(" new image optical center point = %dx%d", optical_center_x1, optical_center_y1);
+
+    QPoint **array;
+    Create2DArray(array, height1, width1);
+
+    int dist_max    = optical_center_x;//GetDistance(optical_center_x, 0, optical_center_x, optical_center_y);
+    int dist1_max   = optical_center_x1;//GetDistance(optical_center_x1, 0, optical_center_x1, optical_center_y1);
+    qDebug("dist_max = %d, dist1_max1 = %d", dist_max, dist1_max);
+
+    for (int h1 = 0; h1 < height1; h1++)
+    {
+        for (int w1 = 0; w1 < width1; w1++)
+        {
+            int dist1 = GetDistance(w1, h1, optical_center_x1, optical_center_y1);
+            if (dist1 > dist1_max)
+            {
+                array[h1][w1].setX(0);
+                array[h1][w1].setY(0);
+            }
+            else
+            {
+                int x1 = w1;
+                int y1 = h1;
+                if ( y1 == optical_center_y1)
+                {
+                    array[h1][w1].setX(0);
+                    array[h1][w1].setY(0);
+                }
+                else
+                {
+                    float k1        = (x1 - optical_center_x1) / (float)(y1 - optical_center_y1);
+                    //k1            = (x - optical_center_x) / (y - optical_center_y);
+                    // cos(dist/dist_max * M_PI_2) = (dist1_max - dist1) / dist1_max
+                    //int distance    = acos((dist1_max - dist1) / dist1_max) * dist_max / M_PI_2;
+                    // distance1 = sin(dist/dist_max * M_PI_2) * radius1
+                    //int distance = asin(dist1 / radius) * dist_max / M_PI_2;
+                    // distance     = GetDistance(x, y, optical_center_x, optical_center_y);
+                    int distance = dist1/dist1_max * radius1;
+                    // here we can calculate the x, y.
+                    int x = 0;
+                    int y = 0;
+                    if (y1 <optical_center_y1)
+                    {
+                        //x = optical_center_x - distance/(1+k);
+                        y = optical_center_y - distance/(1+k1);
+
+                    }
+                    else
+                    {
+                        y = optical_center_y + distance/(1+k1);
+                    }
+                    x = k1 * ( y - optical_center_y) + optical_center_x;
+                    if (x < 0 || x > width || y < 0 || y > height)
+                    {
+                        array[h1][w1].setX(0);
+                        array[h1][w1].setY(0);
+                    }
+                    else
+                    {
+                        array[h1][w1].setX(x);
+                        array[h1][w1].setY(y);
+                    }
+                    if (x1 == 200)
+                    {
+                        qDebug("k1 = %f, x = %d, y = %d, x1 = %d, y1 = %d,dist = %d, dist1 =%d",
+                               k1, x, y, x1, y1, distance, dist1);
+                    }
+                }
+
+            }
+            
+        }
+    }
+    QImage finalImage(width1,height1,QImage::Format_RGB888);
+    for (int y = 0; y < height1; y++)
+    {
+        for (int x = 0; x < width1; x++)
+        {
+            finalImage.setPixel(x, y, oriImage->pixel(array[y][x]));
+        }
+    }
+    *hImage = finalImage;
+}
+
+int FisheyeDistortionCorrection::GetDistance(int x, int y, int x1, int y1)
+{
+    return (int)qSqrt((x - x1) * (x -x1) + (y - y1) * (y - y1));
+}
+
+int FisheyeDistortionCorrection::GetDistance2(int x, int y, int x1, int y1)
+{
+    return (int) ((x1 - x1) * (x - x1) + (y - y1) * (y - y1));
+}
+
+template<typename T>
+void FisheyeDistortionCorrection::Create2DArray(T **&array, int height, int width)
+{
+    array = new T * [height];
+    for (int h = 0; h < height; ++h)
+    {
+        array[h] = new T [width];
+    }
+}
+
+template <typename T>
+void FisheyeDistortionCorrection::Destroy2DArray(T **&array, int height)
+{
+    if (array != NULL)
+    {
+        for (int h = 0; h < height; h++)
+        {
+            delete [] array[h];
+        }
+    }
+    delete[] array;
+}
 // here, we suspect the standard equation of the circle satisfied the our requirement.
 // (x -a) * (x -a) + (y -b) * (y -b) = r * r;
 void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage, QImage *hImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage)
