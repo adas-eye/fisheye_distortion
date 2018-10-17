@@ -52,7 +52,8 @@ void MainWindow::openFileOnClicked() {
 }
 
 void MainWindow::processOnClicked() {
-    if (mCorrection != NULL) {
+    if (mCorrection != NULL)
+    {
         int width           = ui->edit_width->text().toInt();
         int height          = ui->edit_height->text().toInt();
         int opticalCenterW  = ui->edit_opt_center_x->text().toInt();
@@ -77,6 +78,7 @@ void MainWindow::processOnClicked() {
         QImage rotate_image;
         mCorrection->Process3(&mOriginalImage, &rotate_image, &h_image, &v_image,&smooth_image, &strecth_image);
         //mCorrection->Process4(&mOriginalImage, &h_image);
+        // mCorrection->Process5(&mOriginalImage, &h_image);
         ui->label_h_image->setPixmap(QPixmap::fromImage(h_image));
         ui->label_v_image->setPixmap(QPixmap::fromImage(v_image));
         ui->label_smooth_image->setPixmap(QPixmap::fromImage(smooth_image));

@@ -105,6 +105,60 @@ double FisheyeDistortionCorrection::GetAngelOfTwoLines(double k1, double k2)
     return angle;
 }
 
+void FisheyeDistortionCorrection::Process5(QImage *oriImage, QImage *output)
+{
+    const int width     = oriImage->width();
+    const int height    = oriImage->height();
+    // the optical center and radius should be calibrated alone.
+    const int oc_x      = (width -1) / 2;
+    const int oc_y      = (height -1) / 2;
+    const int max_arc   = oc_x;
+
+    // radius1 * PI / 2 =  max_arc
+    const int radius1   = static_cast<int>(max_arc / M_PI_2);
+    const int width1    = radius1 * 2;
+    const int height1   = radius1 * 2;
+    const int oc_x1     = radius1;
+    const int oc_y1     = radius1;
+
+    QImage final(width1, height1, QImage::Format_RGB888);
+    for (int y1 = 0; y1 < height1; ++y1)
+    {
+        for (int x1 = 0; x1 < width1; ++x1)
+        {
+            double k    = (x1 - oc_x1) / static_cast<double>(y1 - oc_y1);
+            int dist1   = GetDistance(x1, y1, oc_x1, oc_y1);
+            // k        = (x - oc_x) / static_cast<double>(y - oc_y)
+            // int arc  = GetDistance(x, y, oc_x, oc_y);
+            // angle    = arc/max_arc * M_PI_2;
+            // dist1    = radius1 * (1 - cos(angle)).
+            // we can calculate the x, y.
+            //int arc     = static_cast<int>(asin(dist1/static_cast<double>(radius1)) * max_arc / M_PI_2);
+            int arc     = static_cast<int>(acos( 1 - dist1/static_cast<double>(radius1)) * max_arc / M_PI_2);
+            //arc         = static_cast<int>(qPow(arc/static_cast<double>(max_arc), 0.01) * arc);
+
+            int y = 0;
+            if ( y1 < oc_y1)
+            {
+                y = static_cast<int>(oc_y - arc / qSqrt(k * k + 1));
+            }
+            else
+            {
+                y = static_cast<int>(oc_y + arc/qSqrt(k * k + 1));
+            }
+            int x = static_cast<int>( (y - oc_y) * k + oc_x);
+
+            if (x < 0) x = 0;
+            if (x > width -1) x = width-1;
+
+            if (y < 0) y = 0;
+            if (y > height -1) y = height -1;
+            final.setPixel(x1, y1, oriImage->pixel(x, y));
+        }
+    }
+    *output = final;
+}
+
 void FisheyeDistortionCorrection::Process4(QImage *oriImage, QImage *hImage)
 {
     const int width     = oriImage->width();
@@ -221,12 +275,12 @@ void FisheyeDistortionCorrection::Process4(QImage *oriImage, QImage *hImage)
 
 int FisheyeDistortionCorrection::GetDistance(int x, int y, int x1, int y1)
 {
-    return (int)qSqrt((x - x1) * (x -x1) + (y - y1) * (y - y1));
+    return static_cast<int>(qSqrt((x - x1) * (x -x1) + (y - y1) * (y - y1)));
 }
 
 int FisheyeDistortionCorrection::GetDistance2(int x, int y, int x1, int y1)
 {
-    return (int) ((x1 - x1) * (x - x1) + (y - y1) * (y - y1));
+    return static_cast<int>((x1 - x1) * (x - x1) + (y - y1) * (y - y1));
 }
 
 template<typename T>
@@ -279,8 +333,8 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
 
     const int opticalCenterW        = (mOpticalCenterX == 0) ? ((width -1) / 2) : mOpticalCenterX;
     const int opticalCenterH        = (mOpticalCenterY == 0) ? ((height -1) / 2) : mOpticalCenterY;
-    const int maxVerticalArcLength   = AlignTo(opticalCenterH * M_PI, 2);
-    const int maxHorizontalArcLengh = AlignTo(opticalCenterW * M_PI, 2);
+    const int maxVerticalArcLength  = AlignTo(static_cast<int>(opticalCenterH * M_PI), 2);
+    const int maxHorizontalArcLengh = AlignTo(static_cast<int>(opticalCenterW * M_PI), 2);
     qDebug("optical center point: %dx%d", opticalCenterW, opticalCenterH);
     qDebug("maxVerticalArcLength = %d, maxHorizontalArcLength = %d",
            maxVerticalArcLength, maxHorizontalArcLengh);
@@ -338,12 +392,16 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
                 qDebug("the maxHorizontalArcLengh = %d, arcLength = %f", maxHorizontalArcLengh, arcLenghx);
             }
 
+
+            // do arcLengthx compensation.
+            arcLenghx = arcLenghx * 1.6f;
             if ( x0 < opticalCenterW ) {
-                curr = maxHorizontalArcLengh / 2 - (int)arcLenghx;
+                curr = maxHorizontalArcLengh / 2 - static_cast<int>(arcLenghx);
             }
             else
             {
                 curr = maxHorizontalArcLengh / 2 + (int)arcLenghx;
+
             }
 
             curr = Range(curr, 0, maxHorizontalArcLengh - 1);
@@ -378,6 +436,8 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     *hImage = horizonCorrection;
 
     qDebug("Horizontal Correction Done");
+
+    //============================== do horizontal strength =============================
 
 
     //============================== do veritical strength ==============================
@@ -464,13 +524,15 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     }
 #endif
     *vImage = verticalCorrection;
+    *vImage = horizonCorrection;
     int cropX0  = mCropX;
     int cropY0  = mCropY;
     int cropW   = mCropW;
     int cropH   = mCropH;
     qDebug("cropX =%d, cropY = %d, cropW = %d, cropH = %d", cropX0, cropY0, cropW, cropH);
-    *smoothImage = verticalCorrection.copy(cropX0,cropY0, cropW, cropH);
-    *strecthImage = smoothImage->scaled(width, height, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    //*smoothImage = horizonCorrection.copy(cropX0,cropY0, cropW, cropH);
+    //*smoothImage = horizonCorrection
+    *strecthImage = horizonCorrection.scaled(width, height, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     qDebug("strecth image wxh = %dx%d", strecthImage->width(), strecthImage->height());
 }
 

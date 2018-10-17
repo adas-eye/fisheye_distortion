@@ -24,6 +24,8 @@ public:
 
     void    Process4(QImage *oriImage, QImage *hImage);
     
+    void    Process5(QImage *oriImage, QImage *output);
+
     QImage  GetDefaultImage();
     QImage  DoImageRotate(QImage *image, int angleValue);
     /*
