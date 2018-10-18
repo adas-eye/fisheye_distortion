@@ -3,9 +3,12 @@
 #include <QImage>
 #include <QDebug>
 #include <qmath.h>
+#include <QFile>
 
 //#define PARABOLIC
 #define CIRCEL
+
+#define GENERATE_MAPPING 0
 //#define ELLIPSE
 FisheyeDistortionCorrection::FisheyeDistortionCorrection()
 {
@@ -309,9 +312,13 @@ void FisheyeDistortionCorrection::Destroy2DArray(T **&array, int height)
 // (x -a) * (x -a) + (y -b) * (y -b) = r * r;
 void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage, QImage *hImage, QImage *vImage, QImage *smoothImage, QImage *strecthImage)
 {
+
+
     const int width     = oriImage->width();
     const int height    = oriImage->height();
-
+#if GENERATE_MAPPING
+    *oriImage = GenerateSampleImage(width, height);
+#endif
     if (width != mWidth || height != mHeight)
     {
         qDebug("mismatch: set size: %dx%d, image size: %dx%d", mWidth, mHeight, width, height);
@@ -358,12 +365,12 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
          **/
 
         // h / (height / 2) = (coffH - hBase) / (height/2 - hBase).
-        float coffH    = h * (opticalCenterH - verticalBase) / (opticalCenterH) + verticalBase;
+        float coffH    = h * (opticalCenterH - verticalBase) / static_cast<float>(opticalCenterH) + verticalBase;
 
-        if (h == coffH) break;
+        if (std::abs(h - coffH) < 1.f) continue;
         float a = opticalCenterW;
-        float b = (h + coffH - a * a / (float)(h- coffH)) / 2;
-        float r = pow((h - b) * (h - b), 0.5f);
+        float b = (h + coffH - a * a / static_cast<float>(h- coffH)) / 2;
+        float r = static_cast<float>(pow(static_cast<double>((h - b) * (h - b)), 0.5));
 
         //qDebug("a = %f, b = %f, c = %f", a, b, c);
         for (int arc = 0; arc < opticalCenterW; arc++)
@@ -383,24 +390,28 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
 
             int arc = (w < opticalCenterW) ? w : ( 2 * opticalCenterW - w);
 
-            float arcLenghx          = arcLength[arc];
+            float arcLengthx          = arcLength[arc];
 
             if (h == 0 && w == 0)
             {
                 qDebug("arctan = %lf", asin(a/r));
                 qDebug("a = %f, b = %f, r = %f", a, b, r);
-                qDebug("the maxHorizontalArcLengh = %d, arcLength = %f", maxHorizontalArcLengh, arcLenghx);
+                qDebug("the maxHorizontalArcLengh = %d, arcLength = %f", maxHorizontalArcLengh, arcLengthx);
             }
 
 
             // do arcLengthx compensation.
-            arcLenghx = arcLenghx * 1.6f;
+
+            // arcLenghx = 1.6 * arcLengthx;
+
+            // it will better for strength
+            arcLengthx = (1 + 0.6 * pow(arcLengthx/arcLength[0], 3)) * arcLengthx;
             if ( x0 < opticalCenterW ) {
-                curr = maxHorizontalArcLengh / 2 - static_cast<int>(arcLenghx);
+                curr = maxHorizontalArcLengh / 2 - static_cast<int>(arcLengthx);
             }
             else
             {
-                curr = maxHorizontalArcLengh / 2 + (int)arcLenghx;
+                curr = maxHorizontalArcLengh / 2 + (int)arcLengthx;
 
             }
 
@@ -436,8 +447,6 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     *hImage = horizonCorrection;
 
     qDebug("Horizontal Correction Done");
-
-    //============================== do horizontal strength =============================
 
 
     //============================== do veritical strength ==============================
@@ -531,9 +540,28 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     int cropH   = mCropH;
     qDebug("cropX =%d, cropY = %d, cropW = %d, cropH = %d", cropX0, cropY0, cropW, cropH);
     //*smoothImage = horizonCorrection.copy(cropX0,cropY0, cropW, cropH);
-    //*smoothImage = horizonCorrection
-    *strecthImage = horizonCorrection.scaled(width, height, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    *smoothImage = horizonCorrection;
+    *strecthImage = horizonCorrection.scaled(width, height, Qt::KeepAspectRatio, Qt::FastTransformation);
     qDebug("strecth image wxh = %dx%d", strecthImage->width(), strecthImage->height());
+
+#if GENERATE_MAPPING
+    QPoint **mapping;
+    Create2DArray(mapping, height, width);
+    QImage final(width, height, QImage::Format_RGB888);
+
+    GenerateMappingFileBin(mapping, *strecthImage);
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            final.setPixel(x, y, oriImage->pixel(mapping[y][x].x(), mapping[y][x].y()));
+        }
+    }
+    *smoothImage = final;
+
+    SaveMappingDataToFile("./LDC.bin", mapping, width, height);
+    Destroy2DArray(mapping, height);
+#endif
 }
 
 
@@ -1362,4 +1390,71 @@ int FisheyeDistortionCorrection::AlignTo(int value, int k)
     int delat  = value % k;
     if (delat == 0) return value;
     return value + k - delat;
+}
+
+QImage FisheyeDistortionCorrection::GenerateSampleImage(int width, int height)
+{
+    QImage sample(width, height, QImage::Format_RGB888);
+
+    const int width_max    = static_cast<int>(pow(2, 12));
+    const int height_max   = static_cast<int>(pow(2, 12));
+    if (width > width_max || height > height_max)
+    {
+        qDebug("image size is too big. current size: %dx%d, max support size:%dx%d",
+               width, height, width_max, height_max);
+        return sample;
+    }
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            /**
+             * @brief rgbValue will store the x, y value for the low 24-bit. 12 bit for x, 12 bit for y.
+             * so, here, if width > 2^12 or height > 2^12, this method will not valid.
+             */
+            QRgb rgbValue = (0xffu << 24) | ((x & 0xfffu) << 12) | (y & 0xfffu);
+            sample.setPixel(x, y, rgbValue);
+        }
+    }
+    return sample;
+}
+
+void FisheyeDistortionCorrection::GenerateMappingFileBin(QPoint **mapping, QImage final)
+{
+    int width   = final.width();
+    int height  = final.height();
+
+    for (int y  = 0; y < height; y++) {
+        for (int x = 0; x < width; x++)
+        {
+            QRgb rgb = final.pixel(x, y);
+            mapping[y][x].setX((rgb>>12) & (0xfff));
+            mapping[y][x].setY(rgb & 0xfff);
+        }
+    }
+    //bin->open(QIODevice::ReadWrite);
+}
+
+void FisheyeDistortionCorrection::SaveMappingDataToFile(QString path, QPoint **mapping, int width, int height)
+{
+    QFile file(path);
+    file.open(QIODevice::WriteOnly);
+    QDataStream out(&file);
+
+
+    QString version("Lens Distortion Correction. Version: 1.0");
+    qint32  magic_number = 0x44444;
+    out << magic_number;
+    out << qint32(width);
+    out << qint32(height);
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            out << qint16(mapping[y][x].x());
+            out << qint16(mapping[y][x].y());
+        }
+    }
+    file.close();
 }
