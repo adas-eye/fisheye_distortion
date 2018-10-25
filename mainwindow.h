@@ -22,6 +22,8 @@ private:
 public Q_SLOTS:
     void openFileOnClicked();
     void processOnClicked();
+    void generateBinOutput();
+    void checkBinData();
 };
 
 #endif // MAINWINDOW_H

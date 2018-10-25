@@ -427,29 +427,83 @@
        </layout>
       </item>
       <item row="4" column="0">
-       <widget class="QPushButton" name="button_process">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>100</width>
-          <height>60</height>
-         </size>
-        </property>
-        <property name="text">
-         <string>Process</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="horizontalLayout_5">
+        <item>
+         <widget class="QPushButton" name="button_calibration">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>100</width>
+            <height>60</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>Calibration</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="button_save_bin">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>100</width>
+            <height>60</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>SAVE BIN</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="button_check_bin">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>100</width>
+            <height>60</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>Check Bin Data</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </item>
@@ -600,8 +654,8 @@
    <slot>openFileOnClicked()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>47</x>
-     <y>107</y>
+     <x>58</x>
+     <y>150</y>
     </hint>
     <hint type="destinationlabel">
      <x>399</x>
@@ -610,14 +664,14 @@
    </hints>
   </connection>
   <connection>
-   <sender>button_process</sender>
+   <sender>button_calibration</sender>
    <signal>clicked()</signal>
    <receiver>MainWindow</receiver>
    <slot>processOnClicked()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>59</x>
-     <y>133</y>
+     <x>70</x>
+     <y>181</y>
     </hint>
     <hint type="destinationlabel">
      <x>399</x>
@@ -625,9 +679,43 @@
     </hint>
    </hints>
   </connection>
+  <connection>
+   <sender>button_save_bin</sender>
+   <signal>clicked()</signal>
+   <receiver>MainWindow</receiver>
+   <slot>generateBinOutput()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>129</x>
+     <y>170</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>639</x>
+     <y>359</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>button_check_bin</sender>
+   <signal>clicked()</signal>
+   <receiver>MainWindow</receiver>
+   <slot>checkBinData()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>212</x>
+     <y>170</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>639</x>
+     <y>359</y>
+    </hint>
+   </hints>
+  </connection>
  </connections>
  <slots>
   <slot>openFileOnClicked()</slot>
   <slot>processOnClicked()</slot>
+  <slot>generateBinOutput()</slot>
+  <slot>checkBinData()</slot>
  </slots>
 </ui>

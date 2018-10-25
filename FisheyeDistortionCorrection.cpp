@@ -7,8 +7,6 @@
 
 //#define PARABOLIC
 #define CIRCEL
-
-#define GENERATE_MAPPING 0
 //#define ELLIPSE
 FisheyeDistortionCorrection::FisheyeDistortionCorrection()
 {
@@ -317,9 +315,7 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
 
     const int width     = oriImage->width();
     const int height    = oriImage->height();
-#if GENERATE_MAPPING
-    *oriImage = GenerateSampleImage(width, height);
-#endif
+
     if (width != mWidth || height != mHeight)
     {
         qDebug("mismatch: set size: %dx%d, image size: %dx%d", mWidth, mHeight, width, height);
@@ -431,23 +427,13 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
             if (curr < start) curr = start;
             if (h == opticalCenterH || h == opticalCenterH -1 )
             {
-                qDebug("start =%d curr = %d, x = %d, y = %d", start, curr, x0, y0);
+                //qDebug("start =%d curr = %d, x = %d, y = %d", start, curr, x0, y0);
                 //curr = maxHorizontalArcLengh - 1;
             }
 
 
             //qDebug() << "baseX = "<< baseX << endl;
             //qDebug() << "start = "<< start <<", curr = "<< curr << endl;
-
-            if (h == opticalCenterH)
-            {
-
-                {
-                    // y0 = (height-1) / 2;
-                    //qDebug("x0, y0 = (%d, %d)", x0, y0);
-
-                }
-            }
             for (int k = start; k < curr; ++k)
             {
                 mappedX[baseX + k].setX(x0);
@@ -574,24 +560,7 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     *strecthImage = horizonCorrection.scaled(width, height, Qt::KeepAspectRatio, Qt::FastTransformation);
     qDebug("strecth image wxh = %dx%d", strecthImage->width(), strecthImage->height());
 
-#if GENERATE_MAPPING
-    QPoint **mapping;
-    Create2DArray(mapping, height, width);
-    QImage final(width, height, QImage::Format_RGB888);
 
-    GenerateMappingFileBin(mapping, *strecthImage);
-    for (int y = 0; y < height; y++)
-    {
-        for (int x = 0; x < width; x++)
-        {
-            final.setPixel(x, y, oriImage->pixel(mapping[y][x].x(), mapping[y][x].y()));
-        }
-    }
-    *smoothImage = final;
-
-    SaveMappingDataToFile("./LDC.bin", mapping, width, height);
-    Destroy2DArray(mapping, height);
-#endif
 }
 
 
@@ -1449,42 +1418,73 @@ QImage FisheyeDistortionCorrection::GenerateSampleImage(int width, int height)
     return sample;
 }
 
-void FisheyeDistortionCorrection::GenerateMappingFileBin(QPoint **mapping, QImage final)
+void FisheyeDistortionCorrection::GenerateMappingFileBin(QString path, QImage *final)
 {
-    int width   = final.width();
-    int height  = final.height();
-
-    for (int y  = 0; y < height; y++) {
-        for (int x = 0; x < width; x++)
+    int width_out   = final->width();
+    int height_out  = final->height();
+    QPoint **mapping;
+    Create2DArray(mapping, height_out, width_out);
+    for (int y = 0; y < height_out; y++)
+    {
+        for (int x = 0; x < width_out; x++)
         {
-            QRgb rgb = final.pixel(x, y);
+            QRgb rgb = final->pixel(x, y);
             mapping[y][x].setX((rgb>>12) & (0xfff));
             mapping[y][x].setY(rgb & 0xfff);
         }
     }
-    //bin->open(QIODevice::ReadWrite);
-}
-
-void FisheyeDistortionCorrection::SaveMappingDataToFile(QString path, QPoint **mapping, int width, int height)
-{
+    //
     QFile file(path);
-    file.open(QIODevice::WriteOnly);
+    file.open(QIODevice::WriteOnly|QIODevice::Truncate);
     QDataStream out(&file);
-
 
     QString version("Lens Distortion Correction. Version: 1.0");
     qint32  magic_number = 0x44444;
     out << magic_number;
-    out << qint32(width);
-    out << qint32(height);
+    out << qint32(width_out);
+    out << qint32(height_out);
 
-    for (int y = 0; y < height; y++)
+    for (int y = 0; y < height_out; y++)
     {
-        for (int x = 0; x < width; x++)
+        for (int x = 0; x < width_out; x++)
         {
             out << qint16(mapping[y][x].x());
             out << qint16(mapping[y][x].y());
         }
     }
+
+    out.commitTransaction();
+    file.flush();
     file.close();
+    Destroy2DArray(mapping, height_out);
+}
+
+QImage  FisheyeDistortionCorrection::GetImageByBinData(QString path, QImage *input)
+{
+    QFile file(path);
+    file.open(QIODevice::ReadOnly);
+    QDataStream in(&file);
+    qint32 magic_number;
+    qint32 width;
+    qint32 height;
+
+    in >> magic_number >> width >> height;
+
+    qDebug("magic_number = %d, width = %d, height = %d", magic_number, width, height);
+
+    if (width > 0 && height > 0)
+    {
+        QImage output(width, height, QImage::Format_RGB888);
+        qint16 x_input = 0, y_input = 0;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                in >> x_input >> y_input;
+                output.setPixel(x, y, input->pixel(x_input, y_input));
+            }
+        }
+        return output;
+    }
+    return QImage();
 }

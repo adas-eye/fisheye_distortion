@@ -4,7 +4,8 @@
 #include <QDebug>
 #include <QImage>
 
-QString sDefaultFile = "C:/WorkSpace/fisheye_distortion/process4.jpg";
+static QString sDefaultFile     = "C:/WorkSpace/fisheye_distortion/process4.jpg";
+static QString sDefaultBinFile  = "C:/WorkSpace/fisheye_distortion/LDC.bin";
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -50,6 +51,27 @@ void MainWindow::openFileOnClicked() {
     }
 
 }
+void MainWindow::generateBinOutput()
+{
+    int width_in    = ui->edit_width->text().toInt();
+    int height_in   = ui->edit_height->text().toInt();
+    mOriginalImage  = mCorrection->GenerateSampleImage(width_in, height_in);
+    processOnClicked();
+
+    QImage final    = ui->label_strecth_image->pixmap()->toImage();
+    mCorrection->GenerateMappingFileBin(sDefaultBinFile, &final);
+
+}
+
+void MainWindow::checkBinData()
+{
+    mOriginalImage = mCorrection->GetDefaultImage();
+    QImage output = mCorrection->GetImageByBinData(sDefaultBinFile, &mOriginalImage);
+    ui->label_original_image->setPixmap(QPixmap::fromImage(mOriginalImage));
+    ui->label_strecth_image->setPixmap(QPixmap::fromImage(output));
+    ui->tabWidget->update();
+}
+
 
 void MainWindow::processOnClicked() {
     if (mCorrection != NULL)
@@ -79,6 +101,7 @@ void MainWindow::processOnClicked() {
         mCorrection->Process3(&mOriginalImage, &rotate_image, &h_image, &v_image,&smooth_image, &strecth_image);
         // mCorrection->Process4(&mOriginalImage, &h_image);
         // mCorrection->Process5(&mOriginalImage, &h_image);
+        ui->label_original_image->setPixmap(QPixmap::fromImage(mOriginalImage));
         ui->label_h_image->setPixmap(QPixmap::fromImage(h_image));
         ui->label_v_image->setPixmap(QPixmap::fromImage(v_image));
         ui->label_smooth_image->setPixmap(QPixmap::fromImage(smooth_image));
@@ -86,7 +109,6 @@ void MainWindow::processOnClicked() {
         ui->label_strecth_image->setPixmap(QPixmap::fromImage(strecth_image));
 #endif
         ui->label_rotate_image->setPixmap(QPixmap::fromImage(rotate_image));
-
         h_image.save("./test1.jpg");
         ui->tabWidget->show();
     }

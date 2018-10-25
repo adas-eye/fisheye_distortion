@@ -31,8 +31,9 @@ public:
     QImage  DoImageRotate(QImage *image, int angleValue);
 
     QImage  GenerateSampleImage(int width, int height);
-    void    GenerateMappingFileBin(QPoint **mapping,  QImage final);
-    void    SaveMappingDataToFile(QString path, QPoint **mapping, int width, int height);
+    void    GenerateMappingFileBin(QString path, QImage *final);
+
+    QImage  GetImageByBinData(QString path, QImage *input);
 
     /*
      * GetArchLens() : get the arc length between the (x0, y0) and (x1, y1).
