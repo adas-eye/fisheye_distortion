@@ -91,10 +91,11 @@ QImage FisheyeDistortionCorrection::GetDefaultImage()
     return image.convertToFormat(QImage::Format_RGB888);
 }
 
-float FisheyeDistortionCorrection::GetArchLensOfCircel(float a, float b, float r, int x)
+double FisheyeDistortionCorrection::GetArchLensOfCircel(double a, double b, double r, int x)
 {
+    (void)b;
     // original pos( a, b), ref pos (a, 0).
-    return (float)(asin(qAbs(a-x) / r))  * r;
+    return ((asin(qAbs(a-x) / r))  * r);
 }
 
 double FisheyeDistortionCorrection::GetAngelOfTwoLines(double k1, double k2)
@@ -353,10 +354,10 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
      */
 
     QPoint *mappedX             = new QPoint[maxHorizontalArcLengh * height];
-    float *arcLength            = new float[opticalCenterW];
+    double *arcLength           = new double[opticalCenterW];
     const int verticalBase      = (mVerticalBase == 0) ? height / 4: mVerticalBase;
 
-    for (int h = 0; h < opticalCenterH; ++h)
+    for (int h = 0; h <= opticalCenterH; ++h)
     {
         /**
          * the euqtion should locate on these three points.
@@ -365,32 +366,44 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
          **/
 
         // h / (height / 2) = (coffH - hBase) / (height/2 - hBase).
-        float coffH    = h * (opticalCenterH - verticalBase) / static_cast<float>(opticalCenterH) + verticalBase;
 
-        if (std::abs(h - coffH) < 1.f) continue;
-        float a = opticalCenterW;
-        float b = (h + coffH - a * a / static_cast<float>(h- coffH)) / 2;
-        float r = static_cast<float>(pow(static_cast<double>((h - b) * (h - b)), 0.5));
+        // Notice: here plus 1 is to avoid the circel equation error at the critical status,
+        double coffH    = h * (opticalCenterH - verticalBase + 1) / static_cast<double>(opticalCenterH) + verticalBase;
 
-        //qDebug("a = %f, b = %f, c = %f", a, b, c);
+        if (std::abs(h - coffH) < 1)
+        {
+            qDebug("h = %d, coffH = %lf", h , coffH);
+            //h = h +1;
+            //continue;
+        }
+        double a = opticalCenterW;
+        double b = (h + coffH - a * a / static_cast<double>(h- coffH)) / 2;
+        double r = pow((h - b) * (h - b), 0.5);
+
+        if ( h + 10 > opticalCenterH)
+        {
+            qDebug("a = %lf, b = %lf, c = %lf", a, b, r);
+        }
+
         for (int arc = 0; arc < opticalCenterW; arc++)
         {
             arcLength[arc] = GetArchLensOfCircel(a, b, r, arc);
-            //qDebug("arcLengthDeltaX = %f", arcLengthDeltaX[arc]);
+            //qDebug("arcLengthDeltaX = %lf", arcLength[arc]);
         }
 
-        int start = 0;
-        int curr  = 0;
+        int start       = 0;
+        int curr        = 0;
+        int baseX       = h * maxHorizontalArcLengh;
+        int baseXFlip   = (height -1 - h) * maxHorizontalArcLengh;
+
         for (int w = 0; w < width; ++w)
         {
             int x0                  = w;
-            int y0                  = Range(b - pow (pow(r, 2) - pow( x0 - a, 2), 0.5f), 0, height-1);
+            int y0                  = Range(static_cast<int>(b - pow (pow(r, 2) - pow( x0 - a, 2), 0.5)), 0, height-1);
             int x0Flip              = w;
             int y0Flip              = Range(height - 1 - y0, 0, height-1);
-
-            int arc = (w < opticalCenterW) ? w : ( 2 * opticalCenterW - w);
-
-            float arcLengthx          = arcLength[arc];
+            int arc                 = (w < opticalCenterW) ? w : ( 2 * opticalCenterW - w - 1);
+            double arcLengthx       = arcLength[arc];
 
             if (h == 0 && w == 0)
             {
@@ -406,32 +419,46 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
 
             // it will better for strength
             arcLengthx = (1 + 0.6 * pow(arcLengthx/arcLength[0], 3)) * arcLengthx;
-            if ( x0 < opticalCenterW ) {
+            if ( x0 < opticalCenterW )
+            {
                 curr = maxHorizontalArcLengh / 2 - static_cast<int>(arcLengthx);
             }
             else
             {
-                curr = maxHorizontalArcLengh / 2 + (int)arcLengthx;
-
+                curr = maxHorizontalArcLengh / 2 + static_cast<int>(arcLengthx);
+            }
+            curr = Range(curr, 0, maxHorizontalArcLengh - 1);
+            if (curr < start) curr = start;
+            if (h == opticalCenterH || h == opticalCenterH -1 )
+            {
+                qDebug("start =%d curr = %d, x = %d, y = %d", start, curr, x0, y0);
+                //curr = maxHorizontalArcLengh - 1;
             }
 
-            curr = Range(curr, 0, maxHorizontalArcLengh - 1);
-
-            int baseX       = h * maxHorizontalArcLengh;
-            int baseXFlip   = (height -1 - h) * maxHorizontalArcLengh;
 
             //qDebug() << "baseX = "<< baseX << endl;
             //qDebug() << "start = "<< start <<", curr = "<< curr << endl;
 
+            if (h == opticalCenterH)
+            {
+
+                {
+                    // y0 = (height-1) / 2;
+                    //qDebug("x0, y0 = (%d, %d)", x0, y0);
+
+                }
+            }
             for (int k = start; k < curr; ++k)
             {
                 mappedX[baseX + k].setX(x0);
                 mappedX[baseX + k].setY(y0);
+                if (baseX != baseXFlip)
+                {
+                    mappedX[baseXFlip + k].setX(x0Flip);
+                    mappedX[baseXFlip + k].setY(y0Flip);
+                }
 
-                mappedX[baseXFlip + k].setX(x0Flip);
-                mappedX[baseXFlip + k].setY(y0Flip);
             }
-
             start = curr;
         }
     }
@@ -450,7 +477,7 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
 
 
     //============================== do veritical strength ==============================
-
+#if 0
     /**
      * the verital correcion.
      * every column will satisfy the same standard circel equation.
@@ -533,7 +560,10 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     }
 #endif
     *vImage = verticalCorrection;
+#endif
     *vImage = horizonCorrection;
+
+
     int cropX0  = mCropX;
     int cropY0  = mCropY;
     int cropW   = mCropW;

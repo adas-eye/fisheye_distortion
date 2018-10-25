@@ -44,7 +44,7 @@ public:
 
     float   GetArchLens(float a, float  b, float c, int x0, int x1);
 
-    float   GetArchLensOfCircel(float a, float b, float r, int x);
+    double  GetArchLensOfCircel(double a, double b, double r, int x);
 
     double  GetAngelOfTwoLines(double k1, double k2);
 
