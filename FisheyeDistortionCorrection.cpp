@@ -369,7 +369,7 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
         if (std::abs(h - coffH) < 1)
         {
             qDebug("h = %d, coffH = %lf", h , coffH);
-            //h = h +1;
+            h = h +1;
             //continue;
         }
         double a = opticalCenterW;
@@ -463,7 +463,47 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
 
 
     //============================== do veritical strength ==============================
-#if 0
+#if 1
+    /**
+     *  the vertical correction.
+     *  equation: y = a*x*x + bx + c.
+     **/
+    QImage verticalCorrection(hImage->width(), hImage->height(), QImage::Format_RGB888);
+    double base_offset      = (mHorizontalBase == 0) ? width / 4.0: mHorizontalBase;
+    double center_offset    = hImage->width() / 2;
+
+    for (int w = 0; w < hImage->width() / 2; ++w)
+    {
+        double offset = (w / center_offset) * (center_offset - base_offset) + base_offset;
+        double x0   = height/2.0;
+        double y0   = w;
+
+        double x1   = 0;
+        double y1   = offset;
+
+        double x2   = height;
+        double y2   = offset;
+
+        double c    = offset;
+        double a    = (y0 - c) / (x0 * x0 - x0*x2);
+        double b    = -a*x2;
+        if (fabs(w -c) < 0.1) continue;
+        for (int h = 0; h < hImage->height(); ++h)
+        {
+            int x = h;
+            int y = static_cast<int>(a * x * x + b * x + c);
+
+            int w1 = y;
+            int h1 = x;
+            if (w1 > hImage->width() -1)
+                w1 = hImage->width() -1;
+
+            verticalCorrection.setPixel(w, h, hImage->pixel(w1, h1));
+            verticalCorrection.setPixel(hImage->width() - w -1, h, hImage->pixel(hImage->width() - w1 -1, h1));
+        }
+    }
+    *vImage = verticalCorrection;
+#else
     /**
      * the verital correcion.
      * every column will satisfy the same standard circel equation.
@@ -547,7 +587,7 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
 #endif
     *vImage = verticalCorrection;
 #endif
-    *vImage = horizonCorrection;
+    //*vImage = horizonCorrection;
 
 
     int cropX0  = mCropX;
@@ -556,11 +596,12 @@ void FisheyeDistortionCorrection::Process3(QImage *oriImage, QImage *rotateImage
     int cropH   = mCropH;
     qDebug("cropX =%d, cropY = %d, cropW = %d, cropH = %d", cropX0, cropY0, cropW, cropH);
     //*smoothImage = horizonCorrection.copy(cropX0,cropY0, cropW, cropH);
-    *smoothImage = horizonCorrection;
-    *strecthImage = horizonCorrection.scaled(width, height, Qt::KeepAspectRatio, Qt::FastTransformation);
+
+    //*smoothImage    = hImage->scaled(width, height, Qt::KeepAspectRatio, Qt::FastTransformation);
+    //*strecthImage   = vImage->scaled(width, height, Qt::KeepAspectRatio, Qt::FastTransformation);
+    *smoothImage      = hImage->copy(cropX0, cropY0, cropW, cropH);
+    *strecthImage     = vImage->copy(cropX0, cropY0, cropW, cropH);
     qDebug("strecth image wxh = %dx%d", strecthImage->width(), strecthImage->height());
-
-
 }
 
 
@@ -1418,7 +1459,11 @@ QImage FisheyeDistortionCorrection::GenerateSampleImage(int width, int height)
     return sample;
 }
 
-void FisheyeDistortionCorrection::GenerateMappingFileBin(QString path, QImage *final)
+void FisheyeDistortionCorrection::GenerateMappingFileBin(
+        QString path,
+        QImage *final,
+        int width_in,
+        int height_in)
 {
     int width_out   = final->width();
     int height_out  = final->height();
@@ -1441,6 +1486,8 @@ void FisheyeDistortionCorrection::GenerateMappingFileBin(QString path, QImage *f
     QString version("Lens Distortion Correction. Version: 1.0");
     qint32  magic_number = 0x44444;
     out << magic_number;
+    out << qint32(width_in);
+    out << qint32(height_in);
     out << qint32(width_out);
     out << qint32(height_out);
 
@@ -1465,20 +1512,23 @@ QImage  FisheyeDistortionCorrection::GetImageByBinData(QString path, QImage *inp
     file.open(QIODevice::ReadOnly);
     QDataStream in(&file);
     qint32 magic_number;
-    qint32 width;
-    qint32 height;
+    qint32 width_in;
+    qint32 height_in;
+    qint32 width_out;
+    qint32 height_out;
 
-    in >> magic_number >> width >> height;
+    in >> magic_number >> width_in >> height_in >> width_out >> height_out;
 
-    qDebug("magic_number = %d, width = %d, height = %d", magic_number, width, height);
+    qDebug("magic_number = %d, width_in = %d, height_in = %d, width_out = %d, height_out=%",
+           magic_number, width_in, height_in, width_out, height_out);
 
-    if (width > 0 && height > 0)
+    if (width_out > 0 && height_out > 0)
     {
-        QImage output(width, height, QImage::Format_RGB888);
+        QImage output(width_out, height_out, QImage::Format_RGB888);
         qint16 x_input = 0, y_input = 0;
-        for (int y = 0; y < height; y++)
+        for (int y = 0; y < height_out; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < width_out; x++)
             {
                 in >> x_input >> y_input;
                 output.setPixel(x, y, input->pixel(x_input, y_input));

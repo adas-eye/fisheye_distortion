@@ -31,7 +31,7 @@ public:
     QImage  DoImageRotate(QImage *image, int angleValue);
 
     QImage  GenerateSampleImage(int width, int height);
-    void    GenerateMappingFileBin(QString path, QImage *final);
+    void    GenerateMappingFileBin(QString path, QImage *final, int width_in, int height_in);
 
     QImage  GetImageByBinData(QString path, QImage *input);
 

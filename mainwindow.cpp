@@ -21,6 +21,17 @@ MainWindow::MainWindow(QWidget *parent) :
         ui->label_original_image->setPixmap(QPixmap::fromImage(mOriginalImage));
         ui->edit_width->setText(QString::number(mOriginalImage.width()));
         ui->edit_height->setText(QString::number(mOriginalImage.height()));
+
+
+        // default settings
+        ui->edit_opt_center_x->setText(QString::number(mOriginalImage.width()/2 -1));
+        ui->edit_opt_center_y->setText(QString::number(mOriginalImage.height()/2 -1));
+        ui->edit_crop_x->setText(QString::number(204));
+        ui->edit_crop_y->setText(QString::number(0));
+        ui->edit_crop_w->setText(QString::number(1600));
+        ui->edit_crop_h->setText(QString::number(800));
+        ui->edit_h_base->setText(QString::number(200));
+        ui->edit_v_base->setText(QString::number(200));
     }
     ui->tabWidget->setCurrentIndex(0);
     QWidget::showMaximized();
@@ -59,7 +70,7 @@ void MainWindow::generateBinOutput()
     processOnClicked();
 
     QImage final    = ui->label_strecth_image->pixmap()->toImage();
-    mCorrection->GenerateMappingFileBin(sDefaultBinFile, &final);
+    mCorrection->GenerateMappingFileBin(sDefaultBinFile, &final, width_in, height_in);
 
 }
 
