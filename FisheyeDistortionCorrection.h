@@ -3,6 +3,19 @@
 
 #include <QString>
 #include <QImage>
+
+typedef struct CorrectionBinData
+{
+    qint32 magic_number;
+    qint32 major_version;
+    qint32 minor_version;
+    qint32 width_in;
+    qint32 height_in;
+    qint32 width_out;
+    qint32 height_out;
+    void** ppMap;
+} CorrectionBinData_t;
+
 class FisheyeDistortionCorrection
 {
 public:

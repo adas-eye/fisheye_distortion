@@ -1459,12 +1459,35 @@ QImage FisheyeDistortionCorrection::GenerateSampleImage(int width, int height)
     return sample;
 }
 
+QDataStream &operator<<(QDataStream &out, const CorrectionBinData_t &binData) {
+    out << binData.magic_number
+        << binData.major_version
+        << binData.minor_version
+        << binData.width_in
+        << binData.height_in
+        << binData.width_out
+        << binData.height_out;
+    return out;
+
+}
+
+QDataStream &operator>>(QDataStream &in, CorrectionBinData_t &binData) {
+    in  >> binData.magic_number
+        >> binData.major_version
+        >> binData.minor_version
+        >> binData.width_in
+        >> binData.height_in
+        >> binData.width_out
+        >> binData.height_out;
+    return in;
+}
 void FisheyeDistortionCorrection::GenerateMappingFileBin(
         QString path,
         QImage *final,
         int width_in,
         int height_in)
 {
+
     int width_out   = final->width();
     int height_out  = final->height();
     QPoint **mapping;
@@ -1484,12 +1507,18 @@ void FisheyeDistortionCorrection::GenerateMappingFileBin(
     QDataStream out(&file);
 
     QString version("Lens Distortion Correction. Version: 1.0");
-    qint32  magic_number = 0x44444;
-    out << magic_number;
-    out << qint32(width_in);
-    out << qint32(height_in);
-    out << qint32(width_out);
-    out << qint32(height_out);
+
+    CorrectionBinData_t binData;
+    binData.magic_number    = 0x44444;
+    binData.major_version   = 1;
+    binData.minor_version   = 0;
+    binData.width_in        = width_in;
+    binData.height_in       = height_in;
+    binData.width_out       = width_out;
+    binData.height_out      = height_out;
+    binData.ppMap           = reinterpret_cast<void **>(mapping);
+
+    out << binData;
 
     for (int y = 0; y < height_out; y++)
     {
@@ -1511,24 +1540,29 @@ QImage  FisheyeDistortionCorrection::GetImageByBinData(QString path, QImage *inp
     QFile file(path);
     file.open(QIODevice::ReadOnly);
     QDataStream in(&file);
-    qint32 magic_number;
-    qint32 width_in;
-    qint32 height_in;
-    qint32 width_out;
-    qint32 height_out;
+    CorrectionBinData_t binData;
 
-    in >> magic_number >> width_in >> height_in >> width_out >> height_out;
+    in >> binData;
 
-    qDebug("magic_number = %d, width_in = %d, height_in = %d, width_out = %d, height_out=%",
-           magic_number, width_in, height_in, width_out, height_out);
-
-    if (width_out > 0 && height_out > 0)
+    qDebug("magic_number = %d, major_version = %d, minor_version = %d, width_in = %d, height_in = %d, width_out = %d, height_out=%",
+           binData.magic_number,
+           binData.major_version,
+           binData.minor_version,
+           binData.width_in,
+           binData.height_in,
+           binData.width_out,
+           binData.height_out);
+    // check bin file validation.
+    Q_ASSERT(binData.magic_number == 0x44444);
+    Q_ASSERT(binData.major_version == 1);
+    Q_ASSERT(binData.minor_version == 0);
+    if (binData.width_out > 0 && binData.height_out > 0)
     {
-        QImage output(width_out, height_out, QImage::Format_RGB888);
+        QImage output(binData.width_out, binData.height_out, QImage::Format_RGB888);
         qint16 x_input = 0, y_input = 0;
-        for (int y = 0; y < height_out; y++)
+        for (int y = 0; y < binData.height_out; y++)
         {
-            for (int x = 0; x < width_out; x++)
+            for (int x = 0; x < binData.width_out; x++)
             {
                 in >> x_input >> y_input;
                 output.setPixel(x, y, input->pixel(x_input, y_input));

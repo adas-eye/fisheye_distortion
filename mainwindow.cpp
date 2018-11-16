@@ -120,7 +120,7 @@ void MainWindow::processOnClicked() {
         ui->label_strecth_image->setPixmap(QPixmap::fromImage(strecth_image));
 #endif
         ui->label_rotate_image->setPixmap(QPixmap::fromImage(rotate_image));
-        h_image.save("./test1.jpg");
+        strecth_image.save("./test1.jpg");
         ui->tabWidget->show();
     }
 }
