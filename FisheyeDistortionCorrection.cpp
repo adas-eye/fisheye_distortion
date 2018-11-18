@@ -1556,6 +1556,8 @@ QImage  FisheyeDistortionCorrection::GetImageByBinData(QString path, QImage *inp
     Q_ASSERT(binData.magic_number == 0x44444);
     Q_ASSERT(binData.major_version == 1);
     Q_ASSERT(binData.minor_version == 0);
+
+
     if (binData.width_out > 0 && binData.height_out > 0)
     {
         QImage output(binData.width_out, binData.height_out, QImage::Format_RGB888);
